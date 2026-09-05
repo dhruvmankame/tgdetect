@@ -30,3 +30,29 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# ---- Python / ML pipeline ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+# virtualenvs
+.venv/
+venv/
+env/
+
+# Raw datasets & built graphs (large; rebuilt from source, never committed)
+data/raw/
+data/processed/
+data/snapshots/
+*.binetflow
+*.binetflow.xz
+
+# Non-essential research artifacts
+# - the base-paper PDF (copyright + binary)
+# - raw per-run Modal download dumps (curated copies live under models/ & reports/)
+# - rendered HTML duplicates of the markdown docs
+*.pdf
+results/ho_c47/
+TG-DETECT-ARCHITECTURE-v1.html
