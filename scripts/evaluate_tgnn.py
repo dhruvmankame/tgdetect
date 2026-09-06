@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
     import torch
+    import torch.nn as nn
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
         "Evaluation requires the ML dependencies. "
@@ -40,6 +41,31 @@ from models.tgnn import TemporalGNN
 
 # Reuse the exact sequence/metric machinery training used, so the two agree.
 import train_tgnn  # noqa: E402
+
+
+def _fit_temperature(logits: torch.Tensor, labels: torch.Tensor,
+                     lr: float = 1e-2, max_iter: int = 300) -> float:
+    """Learn a single scalar temperature T that minimises NLL on sigmoid(logits / T).
+
+    Standard Platt-style temperature scaling (Guo et al., 2017). T > 1 flattens
+    the sigmoid (the usual direction after over-confident training); T < 1
+    sharpens. Fitting on the validation split guarantees the test metrics are
+    not contaminated.
+    """
+    device = logits.device
+    T = torch.ones(1, device=device, requires_grad=True)
+    opt = torch.optim.LBFGS([T], lr=lr, max_iter=max_iter, line_search_fn="strong_wolfe")
+    labels_f = labels.to(device).reshape(-1).float()
+
+    def nll():
+        opt.zero_grad()
+        loss = nn.functional.binary_cross_entropy_with_logits(
+            logits.reshape(-1) / T.clamp(min=1e-4), labels_f)
+        loss.backward()
+        return loss
+
+    opt.step(nll)
+    return float(T.detach().clamp(min=1e-4).cpu())
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,11 +87,18 @@ def parse_args() -> argparse.Namespace:
                              "test scenarios)")
     parser.add_argument("--threshold", type=float, default=None,
                         help="Decision threshold (defaults to the checkpoint's)")
+    parser.add_argument("--gnn-aggregation", type=str, default=None,
+                        help="GNN aggregation (sage/gat/gcn). Defaults to the "
+                             "value saved in the checkpoint.")
+    parser.add_argument("--temperature-scale", action="store_true",
+                            help="Fit a temperature on the validation split and "
+                                 "calibrate test probabilities before scoring.")
     return parser.parse_args()
 
 
 def load_model(checkpoint: Dict[str, Any], meta: Dict[str, Any]) -> TemporalGNN:
     a = checkpoint.get("args", {})
+    agg = a.get("gnn_aggregation", "sage")
     model = TemporalGNN(
         in_channels=meta["node_feature_dim"],
         edge_dim=meta["edge_feature_dim"],
@@ -76,6 +109,7 @@ def load_model(checkpoint: Dict[str, Any], meta: Dict[str, Any]) -> TemporalGNN:
         dropout=float(a.get("dropout", 0.3)),
         node_types=meta["num_node_types"],
         num_relations=meta["num_relations"],
+        gnn_aggregation=str(agg),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
@@ -127,24 +161,77 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     device = torch.device("cpu")
 
-    print(f"[1/3] loading checkpoint from {args.checkpoint}")
+    print(f"[1/4] loading checkpoint from {args.checkpoint}")
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
     meta = checkpoint["meta"]
     target = checkpoint.get("target", "node")
     manifest = checkpoint.get("split_manifest", {"kind": "single",
                                                  "window_size": int(checkpoint.get("args", {}).get("window_size", 10)),
                                                  "seq_stride": 1})
+    # Allow the CLI to override the checkpoint's aggregation (e.g. when
+    # re-evaluating a legacy checkpoint whose args didn't record it).
+    if args.gnn_aggregation:
+        cargs = dict(checkpoint.get("args", {}))
+        cargs["gnn_aggregation"] = args.gnn_aggregation
+        checkpoint["args"] = cargs
     model = load_model(checkpoint, meta).to(device)
     print(f"  target={target}  split_kind={manifest.get('kind')}")
 
-    print("[2/3] reconstructing evaluation partition")
+    print("[2/4] reconstructing evaluation partition")
     eval_seq = reconstruct_eval_sequences(manifest, args)
     if not eval_seq:
         raise SystemExit("empty evaluation partition")
 
     thr = args.threshold if args.threshold is not None else float(checkpoint.get("threshold", 0.5))
-    print(f"[3/3] evaluating ({target}) @ threshold {thr:.3f}")
+    print(f"[3/4] evaluating ({target}) @ threshold {thr:.3f}")
     y_true, y_prob, scen = train_tgnn.predict(model, eval_seq, target, device)
+
+    if args.temperature_scale and manifest.get("kind") == "scenario":
+        # Calibrate on the validation tail of the training scenarios, then
+        # apply T to the held-out test scenarios.
+        val_names = manifest.get("train_scenarios", [])
+        if val_names:
+            val_root = args.snapshots_root
+            if val_root is None:
+                raise SystemExit("--temperature-scale needs --snapshots-root for scenario splits")
+            val_logits, val_labels = [], []
+            model.eval()
+            with torch.no_grad():
+                for name in val_names:
+                    vseqs, _, _ = train_tgnn.load_scenario_sequences(
+                        val_root / name, manifest.get("window_size", 10),
+                        manifest.get("seq_stride", 1))
+                    # Use the val tail the same way training carved it (last val_ratio).
+                    # Approximate: take the last 15% as the calibration set.
+                    k = max(1, int(len(vseqs) * 0.15)) if len(vseqs) > 1 else len(vseqs)
+                    for seq in vseqs[len(vseqs) - k:]:
+                        node_logits, _, edge_logits = model(seq)
+                        logits, labels = (edge_logits, torch.from_numpy(seq[-1]["edge_labels"]).float()) \
+                            if target == "edge" else (node_logits, torch.from_numpy(seq[-1]["node_labels"]).float())
+                        if logits.numel() > 0:
+                            val_logits.append(logits)
+                            val_labels.append(labels.reshape(-1, 1))
+            if val_logits:
+                v_logits = torch.cat(val_logits)
+                v_labels = torch.cat(val_labels)
+                T = _fit_temperature(v_logits, v_labels)
+                print(f"  temperature T={T:.4f} (fit on val tail of train scenarios)")
+                # Re-score test set with calibrated probabilities.
+                calibrated_probs = []
+                model.eval()
+                with torch.no_grad():
+                    for seq in eval_seq:
+                        node_logits, _, edge_logits = model(seq)
+                        logits = edge_logits if target == "edge" else node_logits
+                        if logits.numel() > 0:
+                            calibrated_probs.append(torch.sigmoid(logits / T).cpu().numpy().ravel())
+                        else:
+                            calibrated_probs.append(np.array([], dtype=np.float32))
+                y_prob = np.concatenate(calibrated_probs).astype(np.float32)
+                # Align y_true to the same flattening as y_prob.
+                y_true_acc, _, scen_acc = train_tgnn.predict(model, eval_seq, target, device)
+                y_true = y_true_acc
+                scen = scen_acc
 
     overall = train_tgnn.scored_metrics(y_true, y_prob, thr)
     overall["threshold"] = thr  # saved (checkpoint) threshold, kept for the plot's degeneracy check

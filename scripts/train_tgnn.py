@@ -43,6 +43,34 @@ except ImportError as exc:  # pragma: no cover
 from models.tgnn import TemporalGNN
 
 
+class FocalLoss(nn.Module):
+    """Binary focal loss (Lin et al., 2017, RetinaNet).
+
+    Reduces the relative loss for well-classified examples, focusing training
+    on hard negatives/positives. Helpful under extreme class imbalance where
+    the BCE loss is dominated by easy negatives.
+    """
+    def __init__(self, alpha: float = 0.25, gamma: float = 2.0,
+                 reduction: str = "mean") -> None:
+        super().__init__()
+        self.alpha = float(alpha)
+        self.gamma = float(gamma)
+        self.reduction = reduction
+        self.eps = 1e-8
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        probs = torch.sigmoid(logits)
+        p_t = probs * targets + (1.0 - probs) * (1.0 - targets)
+        alpha_t = self.alpha * targets + (1.0 - self.alpha) * (1.0 - targets)
+        loss = -alpha_t * (1.0 - p_t).clamp(min=self.eps).pow(self.gamma) * p_t.clamp(min=self.eps).log()
+        if self.reduction == "mean":
+            return loss.mean()
+        if self.reduction == "sum":
+            return loss.sum()
+        return loss
+
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train TGNN on snapshots")
     parser.add_argument(
@@ -183,10 +211,40 @@ def parse_args() -> argparse.Namespace:
         help="keep a fixed 0.5 decision threshold instead of maximising val F1",
     )
     parser.add_argument(
+        "--gnn-aggregation",
+        choices=["sage", "gat", "gcn"],
+        default="sage",
+        help="GNN layer type. 'gat' matches the paper's 'attention-based "
+             "aggregation' (3-layer 128-wide by default); 'sage' is the legacy "
+             "default; 'gcn' is a simple baseline.",
+    )
+    parser.add_argument(
+        "--loss",
+        choices=["bce", "focal"],
+        default="bce",
+        help="Loss function. 'focal' down-weights easy negatives, which helps "
+             "under extreme class imbalance (CTU-13 is ~0.9% positive).",
+    )
+    parser.add_argument(
+        "--gamma",
+        type=float,
+        default=2.0,
+        help="Focal-loss focusing parameter (higher = more focus on hard "
+             "examples; 2.0 is the RetinaNet default).",
+    )
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.25,
+        help="Focal-loss alpha (weight of the positive class in the loss; "
+             "0.25 keeps negatives dominant, 0.5 is balanced).",
+    )
+    parser.add_argument(
         "--pos-weight",
         type=float,
         default=None,
-        help="Positive-class weight for BCE loss (auto-computed if omitted)",
+        help="Positive-class weight for BCE loss (auto-computed if omitted, "
+             "ignored when --loss focal).",
     )
     parser.add_argument(
         "--seed",
@@ -651,6 +709,7 @@ def main() -> None:
         dropout=args.dropout,
         node_types=num_node_types,
         num_relations=num_relations,
+        gnn_aggregation=args.gnn_aggregation,
     ).to(device)
     print(f"  parameters: {sum(p.numel() for p in model.parameters()):,}")
 
@@ -659,10 +718,14 @@ def main() -> None:
         if args.pos_weight
         else compute_pos_weight(train_seq, target=args.target, cap=args.pos_weight_cap)
     )
-    print(f"  target={args.target}  pos_weight for BCE: {pos_weight.item():.2f}")
-    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight.to(device))
+    if args.loss == "focal":
+        criterion = FocalLoss(alpha=args.alpha, gamma=args.gamma).to(device)
+        print(f"  loss=Focal(alpha={args.alpha}, gamma={args.gamma})")
+    else:
+        print(f"  target={args.target}  pos_weight for BCE: {pos_weight.item():.2f}")
+        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight.to(device))
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
 
     print("[4/4] training")
     best_score = -1.0

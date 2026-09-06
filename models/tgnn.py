@@ -14,7 +14,7 @@ import numpy as np
 try:
     import torch
     import torch.nn as nn
-    from torch_geometric.nn import GCNConv, SAGEConv, global_max_pool
+    from torch_geometric.nn import GATConv, GCNConv, SAGEConv, global_max_pool
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
         "TGNN models require PyTorch and PyTorch Geometric. "
@@ -40,6 +40,7 @@ class TemporalGNN(nn.Module):
         dropout: float = 0.3,
         node_types: Optional[int] = None,
         num_relations: Optional[int] = None,
+        gnn_aggregation: str = "sage",  # "sage" | "gat" | "gcn"
     ) -> None:
         super().__init__()
 
@@ -49,6 +50,7 @@ class TemporalGNN(nn.Module):
         self.out_channels = out_channels
         self.num_gnn_layers = num_gnn_layers
         self.dropout = dropout
+        self.gnn_aggregation = gnn_aggregation.lower()
 
         # Optional learned embeddings for heterogeneous types.
         self.node_type_embedding: Optional[nn.Embedding] = None
@@ -62,7 +64,6 @@ class TemporalGNN(nn.Module):
             self.relation_embedding = nn.Embedding(num_relations, 16)
             edge_dim = 16
 
-
         # GNN layers operate on each snapshot independently.
         self.convs = nn.ModuleList()
         self.edge_encoders = nn.ModuleList()
@@ -70,12 +71,21 @@ class TemporalGNN(nn.Module):
 
         for i in range(num_gnn_layers):
             in_ch = gnn_input if i == 0 else hidden_channels
-            # GraphSAGE is robust to unseen nodes (OOD scenarios).
-            self.convs.append(SAGEConv(in_ch, hidden_channels))
-            if edge_dim > 0:
-                self.edge_encoders.append(nn.Linear(edge_dim, hidden_channels))
-            else:
+            agg = self.gnn_aggregation
+            if agg == "gat":
+                # Multi-head GAT: paper-aligned with 4 heads, dropout 0.2.
+                self.convs.append(GATConv(in_ch, hidden_channels // 4, heads=4,
+                                          dropout=dropout, edge_dim=edge_dim if edge_dim > 0 else None))
+                self.edge_encoders.append(None)  # GAT takes edge_attr directly
+            elif agg == "gcn":
+                self.convs.append(GCNConv(in_ch, hidden_channels))
                 self.edge_encoders.append(None)
+            else:
+                self.convs.append(SAGEConv(in_ch, hidden_channels))
+                if edge_dim > 0:
+                    self.edge_encoders.append(nn.Linear(edge_dim, hidden_channels))
+                else:
+                    self.edge_encoders.append(None)
             self.batch_norms.append(nn.BatchNorm1d(hidden_channels))
 
         # RNN layers aggregate node embeddings across snapshots.
@@ -111,26 +121,26 @@ class TemporalGNN(nn.Module):
         h = x
 
         num_nodes = x.size(0)
-        for conv, edge_enc, bn in zip(self.convs, self.edge_encoders, self.batch_norms):
-            h = conv(h, edge_index)  # [N, hidden]
-
-            if (
-                edge_attr is not None
-                and edge_enc is not None
-                and edge_index.numel() > 0
-            ):
-                # Encode each edge, then mean-aggregate messages onto BOTH
-                # endpoints. Aggregating onto the destination only starves
-                # pure-source actors (scanners / DDoS bots / C2 initiators) of
-                # any edge signal — exactly the CTU-13 attacker profile.
-                edge_msg = torch.relu(edge_enc(edge_attr))  # [E, hidden]
-                agg = torch.zeros_like(h)
-                counts = torch.zeros(num_nodes, 1, device=h.device)
-                ones = torch.ones(edge_index.size(1), 1, device=h.device)
-                for endpoint in (edge_index[0], edge_index[1]):
-                    agg.index_add_(0, endpoint, edge_msg)
-                    counts.index_add_(0, endpoint, ones)
-                h = h + agg / counts.clamp(min=1.0)
+        for i, (conv, edge_enc, bn) in enumerate(
+            zip(self.convs, self.edge_encoders, self.batch_norms)
+        ):
+            if self.gnn_aggregation == "gat":
+                h = conv(h, edge_index, edge_attr=edge_attr)  # [N, hidden]
+            else:
+                h = conv(h, edge_index)  # [N, hidden]
+                if (
+                    edge_attr is not None
+                    and edge_enc is not None
+                    and edge_index.numel() > 0
+                ):
+                    edge_msg = torch.relu(edge_enc(edge_attr))  # [E, hidden]
+                    agg = torch.zeros_like(h)
+                    counts = torch.zeros(num_nodes, 1, device=h.device)
+                    ones = torch.ones(edge_index.size(1), 1, device=h.device)
+                    for endpoint in (edge_index[0], edge_index[1]):
+                        agg.index_add_(0, endpoint, edge_msg)
+                        counts.index_add_(0, endpoint, ones)
+                    h = h + agg / counts.clamp(min=1.0)
 
             h = torch.relu(h)
             # BatchNorm needs >1 sample in train mode; tiny snapshots are common.
