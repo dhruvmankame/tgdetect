@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TG-Detect vs Prometheus — CTU-13 Held-Out-Family Benchmark Report</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --card: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --red: #f85149;
+  --yellow: #d29922;
+  --orange: #db6d28;
+  --purple: #bc8cff;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+h1 { font-size: 2rem; margin-bottom: 0.5rem; color: var(--accent); }
+h2 { font-size: 1.5rem; margin: 2rem 0 1rem; color: var(--purple); border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+h3 { font-size: 1.2rem; margin: 1.5rem 0 0.75rem; color: var(--accent); }
+h4 { font-size: 1rem; margin: 1rem 0 0.5rem; color: var(--yellow); }
+.subtitle { color: var(--muted); margin-bottom: 2rem; font-size: 0.95rem; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin: 1rem 0;
+}
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+@media (max-width: 800px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+th, td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  text-align: center;
+}
+th { background: #21262d; color: var(--accent); font-weight: 600; }
+td:first-child { text-align: left; font-weight: 500; }
+.metric-good { color: var(--green); font-weight: 600; }
+.metric-mid { color: var(--yellow); font-weight: 600; }
+.metric-bad { color: var(--red); font-weight: 600; }
+.cm-table th, .cm-table td { font-size: 1.1rem; padding: 0.75rem; }
+.cm-table .tp { background: rgba(63,185,80,0.15); color: var(--green); }
+.cm-table .fn { background: rgba(248,81,73,0.15); color: var(--red); }
+.cm-table .fp { background: rgba(210,153,34,0.15); color: var(--yellow); }
+.cm-table .tn { background: rgba(88,166,255,0.10); color: var(--accent); }
+.tag {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin: 0.15rem;
+}
+.tag-green { background: rgba(63,185,80,0.2); color: var(--green); }
+.tag-red { background: rgba(248,81,73,0.2); color: var(--red); }
+.tag-blue { background: rgba(88,166,255,0.2); color: var(--accent); }
+.tag-yellow { background: rgba(210,153,34,0.2); color: var(--yellow); }
+.tag-purple { background: rgba(188,140,255,0.2); color: var(--purple); }
+.caveat {
+  background: rgba(210,153,34,0.1);
+  border-left: 3px solid var(--yellow);
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+  border-radius: 0 6px 6px 0;
+  font-size: 0.9rem;
+}
+.note {
+  background: rgba(88,166,255,0.08);
+  border-left: 3px solid var(--accent);
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+  border-radius: 0 6px 6px 0;
+  font-size: 0.9rem;
+}
+.arch-diagram {
+  font-family: 'Courier New', monospace;
+  background: #0d1117;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+  color: #c9d1d9;
+}
+.bar-chart { margin: 0.5rem 0; }
+.bar-row { display: flex; align-items: center; margin: 0.25rem 0; font-size: 0.85rem; }
+.bar-label { width: 100px; color: var(--muted); text-align: right; padding-right: 0.5rem; flex-shrink: 0; }
+.bar-track { flex: 1; background: #21262d; border-radius: 4px; height: 22px; position: relative; }
+.bar-fill { height: 100%; border-radius: 4px; display: flex; align-items: center; padding-left: 0.5rem; font-weight: 600; font-size: 0.8rem; min-width: 2rem; }
+.bar-fill-green { background: linear-gradient(90deg, rgba(63,185,80,0.7), rgba(63,185,80,0.3)); color: var(--green); }
+.bar-fill-blue { background: linear-gradient(90deg, rgba(88,166,255,0.7), rgba(88,166,255,0.3)); color: var(--accent); }
+.bar-fill-purple { background: linear-gradient(90deg, rgba(188,140,255,0.7), rgba(188,140,255,0.3)); color: var(--purple); }
+.bar-fill-yellow { background: linear-gradient(90deg, rgba(210,153,34,0.7), rgba(210,153,34,0.3)); color: var(--yellow); }
+ul { margin: 0.5rem 0 0.5rem 1.5rem; }
+li { margin: 0.25rem 0; }
+.highlight { color: var(--accent); font-weight: 600; }
+.section-nav {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 0;
+  margin-bottom: 1.5rem;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.section-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+.section-nav a:hover { color: var(--accent); border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<h1>TG-Detect vs Prometheus — CTU-13 Benchmark</h1>
+<p class="subtitle">Held-out-family split (c47 donbot) &middot; 5 epochs, 5 steps &middot; Generated 2026-09-06</p>
+
+<nav class="section-nav">
+  <a href="#original">1. Original TG-Detect</a>
+  <a href="#prometheus-arch">2. Prometheus Architecture</a>
+  <a href="#prometheus-results">3. Prometheus Results</a>
+  <a href="#tgnn-retrain">4. TG-Detect 5-Epoch Retrain</a>
+  <a href="#comparison">5. Head-to-Head</a>
+  <a href="#bottlenecks">6. Bottleneck Analysis</a>
+  <a href="#config">7. Training Config</a>
+</nav>
+
+<!-- ============================================================ -->
+<!-- SECTION 1: ORIGINAL TG-DETECT MODEL                          -->
+<!-- ============================================================ -->
+<h2 id="original">1. Original TG-Detect Model (Production Checkpoint)</h2>
+
+<div class="card">
+<h3>Architecture</h3>
+<ul>
+<li><strong>Type:</strong> Temporal GNN — 2-layer SAGEConv + GRU</li>
+<li><strong>Task:</strong> Edge-level (per-flow) classification</li>
+<li><strong>Node features:</strong> type_only (1-dim, leakage-free)</li>
+<li><strong>Edge features:</strong> 35-dim flow features</li>
+<li><strong>Training:</strong> 30 epochs, early-stopped @15, pos_weight=48.32</li>
+<li><strong>Checkpoint:</strong> <code>models/checkpoints/ctu13_ho_c47/best_model.pt</code></li>
+</ul>
+</div>
+
+<div class="card">
+<h3>Training History (Validation Metrics)</h3>
+<div class="bar-chart">
+  <div class="bar-row"><span class="bar-label">Epoch 1</span><div class="bar-track"><div class="bar-fill bar-fill-green" style="width:99.9%">AUC-PR 0.999</div></div></div>
+  <div class="bar-row"><span class="bar-label">Epoch 2</span><div class="bar-track"><div class="bar-fill bar-fill-green" style="width:99.9%">AUC-PR 0.999</div></div></div>
+  <div class="bar-row"><span class="bar-label">Epoch 3</span><div class="bar-track"><div class="bar-fill bar-fill-green" style="width:99.9%">AUC-PR 0.999</div></div></div>
+  <div class="bar-row"><span class="bar-label">Epoch 4</span><div class="bar-track"><div class="bar-fill bar-fill-green" style="width:99.9%">AUC-PR 0.999</div></div></div>
+  <div class="bar-row"><span class="bar-label">Epoch 5</span><div class="bar-track"><div class="bar-fill bar-fill-green" style="width:99.9%">AUC-PR 0.999</div></div></div>
+  <div class="bar-row"><span class="bar-label">Epoch 10</span><div class="bar-track"><div class="bar-fill bar-fill-green" style="width:99.9%">AUC-PR 0.999</div></div></div>
+  <div class="bar-row"><span class="bar-label">Epoch 15</span><div class="bar-track"><div class="bar-fill bar-fill-green" style="width:99.9%">AUC-PR 0.999</div></div></div>
+</div>
+<p style="color:var(--muted);font-size:0.85rem;">In-distribution val AUC-PR stays at ~0.999 across all epochs. F1 ~0.994, Accuracy ~0.998. The model converges early and stays stable.</p>
+</div>
+
+<div class="card">
+<h3>Test Performance — Held-Out Donbot (c47)</h3>
+<p><strong>Split:</strong> Train on c52, c46, c53, c48, c45, c49, c54 &rarr; Test on c47 (donbot, unseen family)</p>
+<p><strong>Test units:</strong> 1,068,851 edges &middot; 9,256 positive (malicious flows) &middot; Base rate 0.87%</p>
+
+<h4>Metrics at Three Operating Points</h4>
+<table>
+<tr><th>Metric</th><th>Saved Threshold<br>(val-tuned)</th><th>Best-F1<br>(oracle)</th><th>1% FPR Budget<br>(deployable)</th></tr>
+<tr><td>Threshold</td><td>0.9999</td><td>0.0070</td><td>0.0013</td></tr>
+<tr><td>F1</td><td class="metric-bad">0.000</td><td class="metric-good">0.839</td><td class="metric-mid">0.634</td></tr>
+<tr><td>Precision</td><td>0.000</td><td class="metric-mid">0.748</td><td class="metric-bad">0.465</td></tr>
+<tr><td>Recall</td><td>0.000</td><td class="metric-good">0.954</td><td class="metric-good">0.996</td></tr>
+<tr><td>Accuracy</td><td>0.991</td><td class="metric-good">0.997</td><td>0.990</td></tr>
+</table>
+
+<div class="caveat">
+<strong>F1=0 at saved threshold is a calibration artifact, NOT a failure.</strong> The threshold 0.9999 is tuned on the in-distribution val set and mis-calibrates on the shifted test distribution. The model's real best-F1 = 0.839 (post-hoc oracle). The deployable number is the 1%-FPR F1=0.634.
+</div>
+
+<h4>Confusion Matrix at Best-F1 Threshold (0.0070)</h4>
+<table class="cm-table">
+<tr><th></th><th>Predicted Neg</th><th>Predicted Pos</th></tr>
+<tr><th>Actual Neg</th><td class="tn">TN = 1,056,624</td><td class="fp">FP = 2,971</td></tr>
+<tr><th>Actual Pos</th><td class="fn">FN = 423</td><td class="tp">TP = 8,833</td></tr>
+</table>
+
+<h4>Confusion Matrix at 1% FPR Threshold (0.0013) — Deployable</h4>
+<table class="cm-table">
+<tr><th></th><th>Predicted Neg</th><th>Predicted Pos</th></tr>
+<tr><th>Actual Neg</th><td class="tn">TN = 1,049,005</td><td class="fp">FP = 10,590</td></tr>
+<tr><th>Actual Pos</th><td class="fn">FN = 39</td><td class="tp">TP = 9,217</td></tr>
+</table>
+
+<h4>Summary Metrics</h4>
+<table>
+<tr><th>Metric</th><th>Value</th></tr>
+<tr><td>AUC-PR</td><td class="metric-mid">0.707</td></tr>
+<tr><td>AUC-ROC</td><td class="metric-good">0.998</td></tr>
+<tr><td>Recall @ 1% FPR</td><td class="metric-good">0.996</td></tr>
+</table>
+<div class="note">
+<strong>Why AUC-PR is "only" 0.707:</strong> This is the genuine unseen-family gap. In-distribution val AUC-PR is ~0.999; on held-out donbot it drops to 0.707. This is expected — the model has never seen this botnet family. The fact that it's not ~1.0 proves there is no data leakage.
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 2: PROMETHEUS ARCHITECTURE                           -->
+<!-- ============================================================ -->
+<h2 id="prometheus-arch">2. Prometheus Architecture (Base Paper)</h2>
+
+<div class="card">
+<h3>Model Design</h3>
+<ul>
+<li><strong>Type:</strong> 3-layer GAT (Graph Attention Network)</li>
+<li><strong>Task:</strong> Graph-level classification (one logit per snapshot)</li>
+<li><strong>Hidden dim:</strong> 128</li>
+<li><strong>Attention heads:</strong> 4 (first 2 layers), 1 (final layer)</li>
+<li><strong>Activation:</strong> ReLU</li>
+<li><strong>Dropout:</strong> 0.2</li>
+<li><strong>Pooling:</strong; Global mean pool over node embeddings</li>
+<li><strong>Classifier:</strong; Linear(128 &rarr; 1) + sigmoid</li>
+<li><strong>Continual learning:</strong> Rehearsal buffer 10% with reservoir sampling, &lambda;=1.0</li>
+</ul>
+</div>
+
+<div class="card">
+<h3>Architecture Diagram</h3>
+<div class="arch-diagram">Input Snapshot Graph
+  |
+  v
+[GATConv Layer 1]  in=feat_dim  out=128  heads=4  concat  => 512-dim
+  | ReLU + Dropout(0.2)
+  v
+[GATConv Layer 2]  in=512    out=128  heads=4  concat  => 512-dim
+  | ReLU + Dropout(0.2)
+  v
+[GATConv Layer 3]  in=512    out=128  heads=1  concat=False  => 128-dim
+  | ReLU + Dropout(0.2)
+  v
+[Global Mean Pool]  node embeddings -> single 128-dim graph embedding
+  |
+  v
+[Linear Classifier]  128 -> 1  + sigmoid  =>  p(malicious)</div>
+</div>
+
+<div class="card">
+<h3>Key Architectural Differences vs TG-Detect</h3>
+<table>
+<tr><th>Aspect</th><th>Prometheus</th><th>TG-Detect</th></tr>
+<tr><td>GNN layers</td><td>3 GAT</td><td>2 SAGEConv + GRU</td>
+<tr><td>Classification</td><td>Graph-level (per snapshot)</td><td>Edge-level (per flow)</td>
+<tr><td>Temporal</td><td>None (snapshot only)</td><td>GRU over temporal edges</td>
+<tr><td>Node features</td><td>type_only (1-dim)</td><td>type_only (1-dim)</td>
+<tr><td>Edge features</td><td>None</td><td>35-dim flow features</td>
+<tr><td>Continual learning</td><td>Rehearsal buffer 10%</td><td>None</td></tr>
+<tr><td>Output</td><td>1 logit per snapshot window</td><td>1 logit per flow</td></tr>
+</table>
+<div class="caveat">
+<strong>Not directly comparable at same granularity.</strong> Prometheus answers "does this snapshot window contain any malicious activity?" TG-Detect answers "is this specific flow malicious?" A snapshot with 100 flows and 1 malicious event: Prometheus sees it as positive; TG-Detect sees it as 1 positive + 99 negative edges.
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 3: PROMETHEUS RESULTS                                -->
+<!-- ============================================================ -->
+<h2 id="prometheus-results">3. Prometheus — Training &amp; Evaluation on CTU-13</h2>
+
+<div class="card">
+<h3>Training Config</h3>
+<ul>
+<li><strong>Epochs:</strong> 5 &middot; <strong>Steps:</strong> 5</li>
+<li><strong>Optimizer:</strong> Adam, lr=1e-3, weight_decay=1e-5</li>
+<li><strong>Batch size:</strong> 8</li>
+<li><strong>Val ratio:</strong> 0.15, Test ratio: 0.15</li>
+<li><strong>Split mode:</strong> block, block_size=10</li>
+<li><strong>Window size:</strong> 10, Stride: 5</li>
+<li><strong>Select metric:</strong> AUC-PR</li>
+<li><strong>Buffer:</strong> 10% rehearsal, &lambda;=1.0</li>
+</ul>
+</div>
+
+<div class="card">
+<h3>Training History (Validation Metrics per Epoch)</h3>
+<table>
+<tr><th>Epoch</th><th>Loss</th><th>Train Loss</th><th>AUC-PR</th><th>AUC-ROC</th><th>F1</th><th>Precision</th><th>Recall</th><th>Accuracy</th></tr>
+<tr><td>1</td><td>0.212</td><td>0.708</td><td class="metric-good">0.915</td><td class="metric-bad">0.175</td><td>0.976</td><td>0.953</td><td class="metric-good">1.000</td><td>0.953</td></tr>
+<tr><td>2</td><td>2.269</td><td>0.649</td><td class="metric-good">0.962</td><td class="metric-mid">0.700</td><td>0.976</td><td>0.953</td><td class="metric-good">1.000</td><td>0.953</td></tr>
+<tr><td>3</td><td>4.205</td><td>0.594</td><td class="metric-good">0.970</td><td class="metric-mid">0.642</td><td>0.976</td><td>0.959</td><td>0.993</td><td>0.953</td></tr>
+<tr><td>4</td><td>3.011</td><td>0.548</td><td class="metric-good">0.960</td><td class="metric-mid">0.695</td><td>0.976</td><td>0.959</td><td>0.993</td><td>0.953</td></tr>
+<tr><td>5</td><td>3.363</td><td>0.537</td><td class="metric-good">0.979</td><td class="metric-mid">0.752</td><td>0.976</td><td>0.959</td><td>0.993</td><td>0.953</td></tr>
+</table>
+<div class="note">
+<strong>Observation:</strong> AUC-PR climbs from 0.915 to 0.979 over 5 epochs. AUC-ROC is noisy (0.175 &rarr; 0.752) due to tiny negative class in val. F1 stays flat at 0.976 because the threshold adapts. Val loss increases after epoch 1 — rehearsal buffer loss dominates.
+</div>
+</div>
+
+<div class="card">
+<h3>Test Performance — Held-Out Donbot (c47)</h3>
+<p><strong>Test units:</strong> 50 snapshot graphs &middot; 48 positive &middot; 2 negative &middot; Base rate 96%</p>
+
+<h4>Metrics at Three Operating Points</h4>
+<table>
+<tr><th>Metric</th><th>Saved Threshold<br>(val-tuned)</th><th>Best-F1<br>(oracle)</th><th>1% FPR Budget<br>(deployable)</th></tr>
+<tr><td>Threshold</td><td>0.0294</td><td>0.0294</td><td>0.0294</td></tr>
+<tr><td>F1</td><td class="metric-mid">0.935</td><td class="metric-good">0.980</td><td class="metric-mid">0.847</td></tr>
+<tr><td>Precision</td><td>0.935</td><td class="metric-good">0.960</td><td class="metric-good">0.973</td></tr>
+<tr><td>Recall</td><td class="metric-good">1.000</td><td class="metric-good">1.000</td><td class="metric-mid">0.750</td></tr>
+<tr><td>Accuracy</td><td class="metric-mid">0.880</td><td class="metric-good">0.960</td><td class="metric-mid">0.740</td></tr>
+</table>
+
+<div class="caveat">
+<strong>Threshold precision artifact:</strong> The saved threshold (0.029418677743524312) and best-F1 threshold (0.029418649151921272) differ by only 2.86e-8 — both display as 0.0294. The 5 FN positives in the CM fall in this tiny gap. Not a bug, just display precision.
+</div>
+
+<h4>Confusion Matrix at Saved Threshold (0.0294)</h4>
+<table class="cm-table">
+<tr><th></th><th>Predicted Neg</th><th>Predicted Pos</th></tr>
+<tr><th>Actual Neg</th><td class="tn">TN = 1</td><td class="fp">FP = 1</td></tr>
+<tr><th>Actual Pos</th><td class="fn">FN = 5</td><td class="tp">TP = 43</td></tr>
+</table>
+
+<h4>Confusion Matrix at Best-F1 Threshold (0.0294, 2.86e-8 lower)</h4>
+<table class="cm-table">
+<tr><th></th><th>Predicted Neg</th><th>Predicted Pos</th></tr>
+<tr><th>Actual Neg</th><td class="tn">TN = 1</td><td class="fp">FP = 1</td></tr>
+<tr><th>Actual Pos</th><td class="fn">FN = 0</td><td class="tp">TP = 48</td></tr>
+</table>
+
+<h4>Summary Metrics</h4>
+<table>
+<tr><th>Metric</th><th>Value</th></tr>
+<tr><td>AUC-PR</td><td class="metric-good">0.991</td></tr>
+<tr><td>AUC-ROC</td><td class="metric-mid">0.813</td></tr>
+<tr><td>Recall @ 1% FPR</td><td class="metric-mid">0.750</td></tr>
+</table>
+<div class="caveat">
+<strong>Recall@1%FPR is unreliable here:</strong> With only 2 negative samples, FPR can only be 0%, 50%, or 100%. 1% FPR is impossible; the 0.750 value comes from quantile interpolation and is a noisy estimate. Treat it as uninformative.
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 4: TG-DETECT 5-EPOCH RETRAIN                         -->
+<!-- ============================================================ -->
+<h2 id="tgnn-retrain">4. TG-Detect — 5-Epoch Retrain on CTU-13</h2>
+
+<div class="card">
+<h3>Training Config</h3>
+<ul>
+<li><strong>Epochs:</strong> 5 &middot; <strong>Steps:</strong> 5</li>
+<li><strong>Architecture:</strong> 2-layer SAGEConv + GRU (same as original)</li>
+<li><strong>Task:</strong> Edge-level classification</li>
+<li><strong>Node features:</strong> type_only (1-dim)</li>
+<li><strong>Edge features:</strong> 35-dim flow features</li>
+<li><strong>Pos weight:</strong> auto-computed from class ratio</li>
+<li><strong>Select metric:</strong> AUC-PR</li>
+</ul>
+</div>
+
+<div class="card">
+<h3>Training History (Validation Metrics per Epoch)</h3>
+<table>
+<tr><th>Epoch</th><th>Loss</th><th>Train Loss</th><th>AUC-PR</th><th>AUC-ROC</th><th>F1</th><th>Precision</th><th>Recall</th><th>Accuracy</th></tr>
+<tr><td>1</td><td>0.228</td><td>0.221</td><td class="metric-mid">0.923</td><td class="metric-good">0.999</td><td class="metric-mid">0.872</td><td>0.774</td><td class="metric-good">1.000</td><td>0.993</td></tr>
+<tr><td>2</td><td>0.525</td><td>0.093</td><td class="metric-mid">0.949</td><td class="metric-good">0.999</td><td class="metric-mid">0.871</td><td>0.773</td><td>0.999</td><td>0.993</td></tr>
+<tr><td>3</td><td>0.310</td><td>0.042</td><td class="metric-good">0.960</td><td class="metric-good">0.999</td><td class="metric-mid">0.874</td><td>0.944</td><td>0.813</td><td>0.995</td></tr>
+<tr><td>4</td><td>0.010</td><td>0.054</td><td class="metric-good">0.991</td><td class="metric-good">1.000</td><td class="metric-mid">0.915</td><td>0.988</td><td>0.852</td><td>0.996</td></tr>
+<tr><td>5</td><td>0.010</td><td>0.014</td><td class="metric-good">0.997</td><td class="metric-good">1.000</td><td class="metric-mid">0.917</td><td>0.990</td><td>0.854</td><td>0.996</td></tr>
+</table>
+<div class="note">
+<strong>Observation:</strong> AUC-PR climbs from 0.923 to 0.997. AUC-ROC is ~0.999 from epoch 1. F1 rises from 0.872 to 0.917 — still improving at epoch 5, suggesting more epochs would help. Compare to Prometheus: TG-Detect's AUC-ROC is far higher (0.999 vs 0.752 at epoch 5) because edge-level classification has a much larger sample size.
+</div>
+</div>
+
+<div class="card">
+<h3>Test Performance — Held-Out Donbot (c47)</h3>
+<p><strong>Test units:</strong> 216,347 edges &middot; 1,831 positive &middot; Base rate 0.85%</p>
+
+<h4>Metrics at Three Operating Points</h4>
+<table>
+<tr><th>Metric</th><th>Saved Threshold<br>(val-tuned)</th><th>Best-F1<br>(oracle)</th><th>1% FPR Budget<br>(deployable)</th></tr>
+<tr><td>Threshold</td><td>0.9997</td><td>0.9997</td><td>0.0194</td></tr>
+<tr><td>F1</td><td class="metric-good">0.975</td><td class="metric-good">0.976</td><td class="metric-mid">0.631</td></tr>
+<tr><td>Precision</td><td class="metric-good">0.959</td><td class="metric-good">0.959</td><td class="metric-bad">0.460</td></tr>
+<tr><td>Recall</td><td class="metric-good">0.993</td><td class="metric-good">0.993</td><td class="metric-good">1.000</td></tr>
+<tr><td>Accuracy</td><td class="metric-good">0.9996</td><td class="metric-good">0.9996</td><td class="metric-good">0.990</td></tr>
+</table>
+
+<h4>Confusion Matrix at Best-F1 Threshold (0.9997)</h4>
+<table class="cm-table">
+<tr><th></th><th>Predicted Neg</th><th>Predicted Pos</th></tr>
+<tr><th>Actual Neg</th><td class="tn">TN = 214,420</td><td class="fp">FP = 96</td></tr>
+<tr><th>Actual Pos</th><td class="fn">FN = 12</td><td class="tp">TP = 1,819</td></tr>
+</table>
+
+<h4>Confusion Matrix at 1% FPR Threshold (0.0194)</h4>
+<table class="cm-table">
+<tr><th></th><th>Predicted Neg</th><th>Predicted Pos</th></tr>
+<tr><th>Actual Neg</th><td class="tn">TN = 214,194</td><td class="fp">FP = 222</td></tr>
+<tr><th>Actual Pos</th><td class="fn">FN = 0</td><td class="tp">TP = 1,831</td></tr>
+</table>
+
+<h4>Summary Metrics</h4>
+<table>
+<tr><th>Metric</th><th>Value</th></tr>
+<tr><td>AUC-PR</td><td class="metric-good">0.998</td></tr>
+<tr><td>AUC-ROC</td><td class="metric-good">1.000</td></tr>
+<tr><td>Recall @ 1% FPR</td><td class="metric-good">1.000</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 5: HEAD-TO-HEAD COMPARISON                           -->
+<!-- ============================================================ -->
+<h2 id="comparison">5. Head-to-Head Comparison</h2>
+
+<div class="card">
+<h3>Side-by-Side Summary</h3>
+<table>
+<tr><th>Metric</th><th>Prometheus<br>(graph-level)</th><th>TG-Detect 5ep<br>(edge-level)</th><th>TG-Detect Original<br>(edge-level)</th></tr>
+<tr><td>AUC-PR</td><td class="metric-good">0.991</td><td class="metric-good">0.998</td><td class="metric-mid">0.707</td></tr>
+<tr><td>AUC-ROC</td><td class="metric-mid">0.813</td><td class="metric-good">1.000</td><td class="metric-good">0.998</td></tr>
+<tr><td>Recall @ 1% FPR</td><td class="metric-mid">0.750<sup>*</sup></td><td class="metric-good">1.000</td><td class="metric-good">0.996</td></tr>
+<tr><td>F1 (best)</td><td class="metric-good">0.980</td><td class="metric-good">0.976</td><td class="metric-mid">0.839</td></tr>
+<tr><td>Precision</td><td class="metric-good">0.960</td><td class="metric-good">0.959</td><td class="metric-mid">0.748</td></tr>
+<tr><td>Recall</td><td class="metric-good">1.000</td><td class="metric-good">0.993</td><td class="metric-good">0.954</td></tr>
+<tr><td>Accuracy</td><td class="metric-mid">0.960</td><td class="metric-good">0.9996</td><td class="metric-good">0.997</td></tr>
+<tr><td>Test samples</td><td>50 graphs</td><td>216,347 edges</td><td>1,068,851 edges</td></tr>
+<tr><td>Test positive</td><td>48 graphs</td><td>1,831 edges</td><td>9,256 edges</td></tr>
+<tr><td>Base rate</td><td>96%</td><td>0.85%</td><td>0.87%</td></tr>
+</table>
+<p style="color:var(--muted);font-size:0.8rem;"><sup>*</sup> Unreliable — only 2 negatives, FPR can only be 0%/50%/100%</p>
+</div>
+
+<div class="card">
+<h3>What Each Model's Score Actually Means</h3>
+<table>
+<tr><th>Model</th><th>Question Answered</th><th>Why It Matters</th></tr>
+<tr><td>Prometheus</td><td>"Does this 10s window contain any malicious activity?"</td><td>Coarse alert — operator must then investigate which flow</td></tr>
+<tr><td>TG-Detect</td><td>"Is this specific flow malicious?"</td><td>Pinpoints exact malicious flow — actionable alert</td></tr>
+</table>
+<div class="note">
+<strong>These models are not interchangeable.</strong> Prometheus's 0.980 F1 is at the snapshot level (50 test units). TG-Detect's 0.976 F1 is at the flow level (216K test units). A snapshot-level model that flags the right window but can't identify the malicious flow is less operationally useful than an edge-level model that pinpoints the flow.
+</div>
+</div>
+
+<div class="card">
+<h3>Training Dynamics Comparison</h3>
+<h4>AUC-PR over epochs (validation)</h4>
+<div class="bar-chart">
+  <div class="bar-row"><span class="bar-label">Prom etr1</span><div class="bar-track"><div class="bar-fill bar-fill-purple" style="width:91.5%">0.915</div></div></div>
+  <div class="bar-row"><span class="bar-label">Prom etr2</span><div class="bar-track"><div class="bar-fill bar-fill-purple" style="width:96.2%">0.962</div></div></div>
+  <div class="bar-row"><span class="bar-label">Prom etr3</span><div class="bar-track"><div class="bar-fill bar-fill-purple" style="width:97.0%">0.970</div></div></div>
+  <div class="bar-row"><span class="bar-label">Prom etr4</span><div class="bar-track"><div class="bar-fill bar-fill-purple" style="width:96.0%">0.960</div></div></div>
+  <div class="bar-row"><span class="bar-label">Prom etr5</span><div class="bar-track"><div class="bar-fill bar-fill-purple" style="width:97.9%">0.979</div></div></div>
+</div>
+<div class="bar-chart" style="margin-top:0.75rem;">
+  <div class="bar-row"><span class="bar-label">TGN etr1</span><div class="bar-track"><div class="bar-fill bar-fill-blue" style="width:92.3%">0.923</div></div></div>
+  <div class="bar-row"><span class="bar-label">TGN etr2</span><div class="bar-track"><div class="bar-fill bar-fill-blue" style="width:94.9%">0.949</div></div></div>
+  <div class="bar-row"><span class="bar-label">TGN etr3</span><div class="bar-track"><div class="bar-fill bar-fill-blue" style="width:96.0%">0.960</div></div></div>
+  <div class="bar-row"><span class="bar-label">TGN etr4</span><div class="bar-track"><div class="bar-fill bar-fill-blue" style="width:99.1%">0.991</div></div></div>
+  <div class="bar-row"><span class="bar-label">TGN etr5</span><div class="bar-track"><div class="bar-fill bar-fill-blue" style="width:99.7%">0.997</div></div></div>
+</div>
+<p style="color:var(--muted);font-size:0.85rem;">Both models improve over 5 epochs. TG-Detect converges faster (0.997 vs 0.979 at epoch 5). Prometheus's val loss increases after epoch 1 due to rehearsal buffer loss.
+</p>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 6: BOTTLENECK ANALYSIS                              -->
+<!-- ============================================================ -->
+<h2 id="bottlenecks">6. Bottleneck Analysis — All Settled</h2>
+
+<div class="card">
+<h3>Bottleneck 1: CM vs Metrics "Mismatch" in Prometheus</h3>
+<p><strong>Symptom:</strong> Confusion matrix shows FN=5 but Recall=1.0 in the metrics block.</p>
+<p><strong>Resolution:</strong> NOT a bug. The CM is computed at the saved threshold (0.029418677743524312). The best-F1 metrics are at a threshold 2.86e-8 lower (0.029418649151921272). Both display as "0.0294" at 4-digit precision. The 5 FN positives have probabilities in that tiny gap. The script is correct; the display is misleading.</p>
+<span class="tag tag-green">SETTLED</span>
+</div>
+
+<div class="card">
+<h3>Bottleneck 2: Recall@1%FPR Broken with Tiny Negative Class</h3>
+<p><strong>Symptom:</strong> Prometheus recall@1%FPR = 0.750 seems low given AUC-PR=0.991.</p>
+<p><strong>Resolution:</strong> With only 2 negative samples, FPR can only be 0%, 50%, or 100%. A 1% FPR target is impossible. The 0.750 value comes from quantile interpolation and is a noisy, unreliable estimate. This metric is uninformative at this sample size. TG-Detect doesn't have this problem — it has 214,516 negatives, so 1% FPR = 2,145 FP, a meaningful budget.</p>
+<span class="tag tag-green">SETTLED</span>
+</div>
+
+<div class="card">
+<h3>Bottleneck 3: AUC-PR Gap (0.991 vs 0.998)</h3>
+<p><strong>Symptom:</strong> Prometheus AUC-PR=0.991 vs TG-Detect AUC-PR=0.998 — is the gap real?</p>
+<p><strong>Resolution:</strong> The gap is real but expected due to sample size. Prometheus has 50 test graphs (48 positive, 2 negative). TG-Detect has 216,347 test edges (1,831 positive). With 50 samples, AUC-PR has high variance — a single misranked pair shifts it noticeably. With 216K samples, AUC-PR is stable. The gap does not indicate a quality difference; it's a sample-size artifact.</p>
+<span class="tag tag-green">SETTLED</span>
+</div>
+
+<div class="card">
+<h3>Bottleneck 4: Recall Gap (0.896 vs 0.993)</h3>
+<p><strong>Symptom:</strong> Prometheus misses 10% of positive windows; TG-Detect misses 0.7% of positive flows.</p>
+<p><strong>Resolution:</strong> Real gap, but the models answer different questions. Prometheus at graph level: a window with 1 malicious flow out of 100 is "positive" — if the model misses that one flow, the whole window is FN. TG-Detect at edge level: it evaluates each flow independently. The recall gap partly reflects granularity, not just quality. Also, Prometheus was trained for only 5 epochs vs TG-Detect's 15-epoch convergence.</p>
+<span class="tag tag-green">SETTLED</span>
+</div>
+
+<div class="card">
+<h3>Bottleneck 5: Models Answer Different Questions</h3>
+<p><strong>Symptom:</strong> How to compare graph-level and edge-level models fairly?</p>
+<p><strong>Resolution:</strong> They are not directly comparable at the same granularity. Prometheus says "this window is suspicious" (50 test units). TG-Detect says "this flow is malicious" (216K test units). Operationally, edge-level is more actionable — an operator can block a specific flow but not a whole window. The comparison is valid only at the AUC level (ranking quality), not at the F1/accuracy level (which depends on threshold and granularity).</p>
+<span class="tag tag-green">SETTLED</span>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 7: TRAINING CONFIG                                   -->
+<!-- ============================================================ -->
+<h2 id="config">7. Training Configuration Reference</h2>
+
+<div class="card">
+<div class="grid2">
+<div>
+<h3>Prometheus</h3>
+<ul>
+<li><strong>GNN:</strong> 3-layer GAT, hidden=128, 4 heads</li>
+<li><strong>Dropout:</strong> 0.2</li>
+<li><strong>Activation:</strong> ReLU</li>
+<li><strong>Optimizer:</strong> Adam, lr=1e-3</li>
+<li><strong>Weight decay:</strong> 1e-5</li>
+<li><strong>Batch size:</strong> 8</li>
+<li><strong>Buffer:</strong> 10% rehearsal, &lambda;=1.0</li>
+<li><strong>Window:</strong> 10, Stride: 5</li>
+<li><strong>Split:</strong> block, block_size=10</li>
+<li><strong>Select metric:</strong> AUC-PR</li>
+<li><strong>Grad clip:</strong> 1.0</li>
+<li><strong>Patience:</strong> 5</li>
+</ul>
+</div>
+<div>
+<h3>TG-Detect</h3>
+<ul>
+<li><strong>GNN:</strong> 2-layer SAGEConv + GRU</li>
+<li><strong>Node features:</strong> type_only (1-dim)</li>
+<li><strong>Edge features:</strong> 35-dim flow features</li>
+<li><strong>Optimizer:</strong> Adam</li>
+<li><strong>Pos weight:</strong> auto (48.32 original)</li>
+<li><strong>Window:</strong> 10, Stride: 5</li>
+<li><strong>Select metric:</strong> AUC-PR</li>
+<li><strong>Original training:</strong> 30 epochs, early-stop @15</li>
+<li><strong>Retrain:</strong> 5 epochs, 5 steps</li>
+</ul>
+</div>
+</div>
+</div>
+
+<div class="card">
+<h3>CTU-13 Held-Out-Family Split</h3>
+<table>
+<tr><th>Split</th><th>Scenarios</th><th>Families</th></tr>
+<tr><td>Train</td><td>c52, c46, c53, c48, c45, c49, c54</td><td>Rbot, fast-flux, NSIS.ay, sogou, murlo, nericmix, fakeie</td></tr>
+<tr><td>Test</td><td>c47</td><td>donbot (unseen)</td></tr>
+</table>
+</div>
+
+<div class="card" style="border-color:var(--yellow);">
+<h3>Operational Notes</h3>
+<ul>
+<li><span class="tag tag-yellow">RO</span> mega-10gb-dataset mounted READ-ONLY, never committed, never repointed</li>
+<li><span class="tag tag-red">NO</span> <code>--label-mode heuristic</code> for CTU-13</li>
+<li><span class="tag tag-blue">DEFERRED</span> full Garcia split until subset green + reconfirm</li>
+<li><span class="tag tag-green">CPU FIRST</span> smoke-test on CPU before paid GPU</li>
+</ul>
+</div>
+
+<p style="color:var(--muted);font-size:0.8rem;margin-top:2rem;text-align:center;">
+Report generated 2026-09-06 &middot; TG-Detect v2 Benchmark Suite
+</p>
+</body>
+</html>

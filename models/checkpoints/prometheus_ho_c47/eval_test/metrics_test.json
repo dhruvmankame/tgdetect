@@ -1,0 +1,63 @@
+{
+  "target": "graph",
+  "overall": {
+    "num_samples": 50,
+    "num_positive": 48,
+    "recall_at_1pct_fpr": 0.75,
+    "auc_pr": 0.9911240670418383,
+    "auc_roc": 0.8125,
+    "f1_at_saved_threshold": 0.9347826086956522,
+    "accuracy_at_saved_threshold": 0.88,
+    "saved_threshold": 0.029418677743524312,
+    "f1": 0.9795918367346939,
+    "precision": 0.96,
+    "recall": 1.0,
+    "accuracy": 0.96,
+    "threshold_best": 0.029418649151921272,
+    "f1_at_1pct_fpr": 0.8470588235294119,
+    "precision_at_1pct_fpr": 0.972972972972973,
+    "accuracy_at_1pct_fpr": 0.74,
+    "threshold_at_1pct_fpr": 0.029418719932436943
+  },
+  "confusion_matrix_at_saved_threshold": [
+    [
+      1,
+      1
+    ],
+    [
+      5,
+      43
+    ]
+  ],
+  "checkpoint_args": {
+    "snapshots": "None",
+    "snapshots_root": "/data/snapshots",
+    "train_scenarios": "ctu13_c52,ctu13_c46,ctu13_c53,ctu13_c48,ctu13_c45,ctu13_c49,ctu13_c54",
+    "test_scenarios": "ctu13_c47",
+    "target": "graph",
+    "out": "/data/checkpoints/prometheus_ho_c47",
+    "epochs": "5",
+    "batch_size": "8",
+    "lr": "0.001",
+    "hidden_channels": "128",
+    "gnn_layers": "3",
+    "dropout": "0.2",
+    "heads": "4",
+    "window_size": "10",
+    "seq_stride": "5",
+    "val_ratio": "0.15",
+    "test_ratio": "0.15",
+    "split_mode": "block",
+    "block_size": "10",
+    "weight_decay": "1e-05",
+    "grad_clip": "1.0",
+    "patience": "5",
+    "select_metric": "auc_pr",
+    "no_threshold_tuning": "False",
+    "pos_weight": "None",
+    "pos_weight_cap": "50.0",
+    "seed": "42",
+    "buffer_pct": "0.1",
+    "lambda_rehearsal": "1.0"
+  }
+}

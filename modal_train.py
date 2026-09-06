@@ -221,10 +221,11 @@ def _snapshots(name: str, window_size: float, stride: float, max_snapshots: int,
 
 
 def _train_cmd(single_name: str, train_scen: str, test_scen: str, out_name: str,
-               epochs: int, hidden: int, lr: float, target: str, extra: str) -> list[str]:
-    """Build the train_tgnn.py argv for either single-dir or scenario-held-out."""
+               epochs: int, hidden: int, lr: float, target: str, extra: str,
+               script: str = "train_tgnn.py") -> list[str]:
+    """Build the training script argv for either single-dir or scenario-held-out."""
     cmd = [
-        "python", "scripts/train_tgnn.py",
+        "python", f"scripts/{script}",
         "--out", f"{REMOTE_DATA}/checkpoints/{out_name}",
         "--epochs", str(epochs),
         "--hidden-channels", str(hidden),
@@ -245,16 +246,18 @@ def _train_cmd(single_name: str, train_scen: str, test_scen: str, out_name: str,
 
 @app.function(gpu="A10G", volumes={REMOTE_DATA: volume}, timeout=60 * 60 * 6, memory=32768)
 def _train_gpu(single_name: str, train_scen: str, test_scen: str, out_name: str,
-               epochs: int, hidden: int, lr: float, target: str, extra: str) -> None:
+               epochs: int, hidden: int, lr: float, target: str, extra: str,
+               script: str = "train_tgnn.py") -> None:
     _run(["nvidia-smi"])
-    _run(_train_cmd(single_name, train_scen, test_scen, out_name, epochs, hidden, lr, target, extra))
+    _run(_train_cmd(single_name, train_scen, test_scen, out_name, epochs, hidden, lr, target, extra, script))
     volume.commit()
 
 
 @app.function(volumes={REMOTE_DATA: volume}, timeout=60 * 60 * 4, cpu=8.0, memory=32768)
 def _train_cpu(single_name: str, train_scen: str, test_scen: str, out_name: str,
-               epochs: int, hidden: int, lr: float, target: str, extra: str) -> None:
-    _run(_train_cmd(single_name, train_scen, test_scen, out_name, epochs, hidden, lr, target, extra))
+               epochs: int, hidden: int, lr: float, target: str, extra: str,
+               script: str = "train_tgnn.py") -> None:
+    _run(_train_cmd(single_name, train_scen, test_scen, out_name, epochs, hidden, lr, target, extra, script))
     volume.commit()
 
 
@@ -274,6 +277,33 @@ def _evaluate(ckpt_name: str, single_name: str, use_scenarios: bool, split: str)
         cmd += ["--snapshots", f"{REMOTE_DATA}/snapshots/{single_name}"]
     _run(cmd)
     volume.commit()
+
+
+@app.function(volumes={REMOTE_DATA: volume}, timeout=60 * 60 * 2, cpu=8.0, memory=32768)
+def _evaluate_prometheus(ckpt_name: str, test_scenarios: str, snapshots_root: str,
+                         window_size: int, seq_stride: int) -> None:
+    """Evaluate a Prometheus (graph-level) checkpoint — evaluate_tgnn.py only
+    handles edge-level TemporalGNN, so Prometheus needs its own evaluator."""
+    out_dir = f"{REMOTE_DATA}/checkpoints/{ckpt_name}/eval_test"
+    cmd = [
+        "python", "scripts/eval_prometheus.py",
+        "--checkpoint", f"{REMOTE_DATA}/checkpoints/{ckpt_name}/best_model.pt",
+        "--snapshots-root", snapshots_root,
+        "--test-scenarios", test_scenarios,
+        "--out", out_dir,
+        "--window-size", str(window_size),
+        "--seq-stride", str(seq_stride),
+    ]
+    _run(cmd)
+    volume.commit()
+
+
+@app.local_entrypoint()
+def evaluate_prometheus_ho(out_name: str = "ho", test_scenarios: str = "",
+                           window_size: int = 10, seq_stride: int = 5) -> None:
+    """Evaluate a held-out Prometheus checkpoint on its test scenarios."""
+    _evaluate_prometheus.remote(out_name, test_scenarios or "ctu13_c47",
+                               f"{REMOTE_DATA}/snapshots", window_size, seq_stride)
 
 
 @app.function(volumes={REMOTE_DATA: volume}, timeout=60 * 10, cpu=2.0)
@@ -521,9 +551,9 @@ def smoke(cap: str = "52", window_size: float = 30, stride: float = 10,
 @app.local_entrypoint()
 def train_ho(train_scenarios: str, test_scenarios: str, out_name: str = "ho",
              epochs: int = 30, hidden: int = 64, lr: float = 0.001,
-             target: str = "edge", extra: str = "") -> None:
+             target: str = "edge", extra: str = "", script: str = "train_tgnn.py") -> None:
     """GPU scenario/family-held-out training (edge-level by default)."""
-    _train_gpu.remote("", train_scenarios, test_scenarios, out_name, epochs, hidden, lr, target, extra)
+    _train_gpu.remote("", train_scenarios, test_scenarios, out_name, epochs, hidden, lr, target, extra, script)
 
 
 @app.local_entrypoint()
