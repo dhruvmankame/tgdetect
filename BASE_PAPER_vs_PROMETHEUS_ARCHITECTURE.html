@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Base Paper vs Prometheus — Architecture Comparison Report</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --card: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --red: #f85149;
+  --yellow: #d29922;
+  --orange: #db6d28;
+  --purple: #bc8cff;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+header {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1.5rem;
+  margin-bottom: 2rem;
+}
+h1 { font-size: 2.2rem; color: var(--accent); margin-bottom: 0.5rem; }
+.subtitle { color: var(--muted); font-size: 1rem; line-height: 1.5; }
+h2 {
+  font-size: 1.5rem;
+  color: var(--purple);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.4rem;
+  margin: 2.5rem 0 1rem;
+}
+h3 { font-size: 1.2rem; color: var(--accent); margin: 1.25rem 0 0.5rem; }
+.meta-box {
+  background: rgba(88,166,255,0.06);
+  border: 1px solid rgba(88,166,255,0.25);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 1.5rem 0;
+  font-size: 0.95rem;
+}
+.meta-box strong { color: var(--accent); }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 1.25rem 0;
+}
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+@media (max-width: 850px) { .grid2 { grid-template-columns: 1fr; } }
+.arch-box {
+  background: #0d1117;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  white-space: pre;
+  overflow-x: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.92rem;
+}
+th, td {
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+th { background: #21262d; color: var(--accent); font-weight: 600; }
+tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+.badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge-green { background: rgba(63,185,80,0.2); color: var(--green); border: 1px solid rgba(63,185,80,0.4); }
+.badge-blue { background: rgba(88,166,255,0.2); color: var(--accent); border: 1px solid rgba(88,166,255,0.4); }
+.badge-yellow { background: rgba(210,153,34,0.2); color: var(--yellow); border: 1px solid rgba(210,153,34,0.4); }
+.badge-red { background: rgba(248,81,73,0.2); color: var(--red); border: 1px solid rgba(248,81,73,0.4); }
+.badge-purple { background: rgba(188,140,255,0.2); color: var(--purple); border: 1px solid rgba(188,140,255,0.4); }
+code {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  background: rgba(110,118,129,0.2);
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.88em;
+}
+pre code {
+  background: transparent;
+  padding: 0;
+}
+.code-block {
+  background: #0d1117;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.85rem;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-size: 0.85rem;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+.alert {
+  border-left: 4px solid;
+  padding: 0.85rem 1.15rem;
+  border-radius: 0 6px 6px 0;
+  margin: 1rem 0;
+  font-size: 0.92rem;
+}
+.alert-blue { background: rgba(88,166,255,0.08); border-color: var(--accent); }
+.alert-yellow { background: rgba(210,153,34,0.08); border-color: var(--yellow); }
+.alert-green { background: rgba(63,185,80,0.08); border-color: var(--green); }
+.alert-red { background: rgba(248,81,73,0.08); border-color: var(--red); }
+.diff-card {
+  border-left: 3px solid var(--purple);
+  margin-bottom: 1.5rem;
+}
+.diff-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.75rem;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Base Research Paper vs. Prometheus</h1>
+  <div class="subtitle">
+    Deep architectural comparison between the IEEE Access 2025 paper and the Prometheus reproduction model in <code>tgdetect</code>
+  </div>
+</header>
+
+<div class="meta-box">
+  <div><strong>Base Reference:</strong> <em>"Adaptive Detection of Advanced Persistent Threats (APT) With Graph Neural Networks and Rehearsal-Based Continual Learning on Wazuh EDR Telemetry"</em>, IEEE Access, Vol. 13, Dec 2025 (Auttapon Pomsathit, KMITL).</div>
+  <div style="margin-top:0.4rem;"><strong>Codebase Implementation:</strong> <code>models/prometheus.py</code>, <code>models/rehearsal_buffer.py</code>, <code>scripts/train_prometheus.py</code>, <code>scripts/eval_prometheus.py</code>.</div>
+</div>
+
+<h2>1. Pipeline Architecture Flows</h2>
+
+<div class="grid2">
+  <div class="card">
+    <h3 style="color:var(--yellow);">Base Paper Pipeline (Pomsathit, 2025)</h3>
+    <div class="arch-box">Wazuh EDR Telemetry (Host Agent Logs)
+  │ [Process, File, Registry, Net]
+  ▼
+Graph Representation G = (V, E, X)
+  │ Nodes: Process, File, RegKey, IP
+  │ Features X: Cmdlines, Hashes, IPs
+  ▼
+3-Layer Attention GNN
+  │ 3 Layers, Hidden Dim = 128
+  │ Activation: ReLU
+  │ Regularization: Dropout = 0.2
+  ▼
+Node-wise Output Layer (Equation 4)
+  │ y_v = softmax(W_o * h_v^(L) + b_o)
+  │ Class probabilities per node
+  ▼
+Continual Learning (Equation 5)
+  │ Loss = L_new(D_t) + λ * L_rehearsal(D_buf)
+  │ 10% Reservoir Buffer (Algorithm R)
+  ▼
+Optimization
+  │ Adam (lr=1e-3, wd=1e-5), batch=256</div>
+  </div>
+
+  <div class="card">
+    <h3 style="color:var(--green);">Prometheus Pipeline (In This Folder)</h3>
+    <div class="arch-box">CTU-13 Network Flows (Argus NetFlow)
+  │ [Bidirectional flow telemetry]
+  ▼
+Temporal Snapshot Graph: Data(...)
+  │ Nodes: IP Addresses (1-dim type)
+  │ Edges: 37-dim leakage-free flow feats
+  ▼
+3-Layer PyG GATConv Model
+  │ Layer 1 & 2: GATConv (4 heads, concat=True)
+  │ Layer 3: GATConv (1 head, concat=False)
+  │ LayerNorm(128) + ReLU + Dropout(0.2)
+  ▼
+Graph-Level Readout (Readout Layer)
+  │ h_graph = global_mean_pool(h, batch)
+  │ Classifier: Linear(128, 1) -> Sigmoid
+  ▼
+Continual Learning with Rehearsal
+  │ RehearsalBuffer(10% of sequences)
+  │ Loss = L_new + 1.0 * L_rehearsal(D_buf)
+  ▼
+Optimization
+  │ Adam (lr=1e-3, wd=1e-5), pos_weight=50.0</div>
+  </div>
+</div>
+
+<h2>2. Core Architectural & Mathematical Differences</h2>
+
+<div class="card diff-card">
+  <div class="diff-title">
+    <span>1. Output Readout & Classification Level</span>
+    <span class="badge badge-red">Structural Difference</span>
+  </div>
+  <p><strong>Base Paper (Section III-C, Equation 4):</strong> Mathematically formulated as strictly <em>node-wise classification</em>:</p>
+  <div class="code-block">y_v = softmax(W_o * h_v^(L) + b_o)</div>
+  <p>The paper defines $y_v$ as the class probability vector for node $v$, assigning probabilities directly from final layer representations $h_v^{(L)}$ with no graph pooling operator.</p>
+  <p style="margin-top:0.75rem;"><strong>Prometheus Implementation (<code>models/prometheus.py:L111-L115</code>):</strong> Formulated as <em>graph-level / snapshot classification</em>:</p>
+  <div class="code-block"># Global mean pooling collapses all nodes in graph: [N, 128] -> [B, 128]
+h = global_mean_pool(h, batch)
+
+# Linear projection to single scalar logit: [B, 128] -> [B, 1]
+return self.classifier(h)</div>
+  <div class="alert alert-yellow">
+    <strong>Why this difference exists:</strong> The base paper reported whole-graph benchmarks in Table 1 (12,500 benign vs. 8,300 malicious graphs) but wrote Equation 4 at the node level. Prometheus resolves this ambiguity by explicitly introducing <code>global_mean_pool</code> to predict whether the entire time-window snapshot contains any malicious activity (<code>snapshot_label</code>).
+  </div>
+</div>
+
+<div class="card diff-card">
+  <div class="diff-title">
+    <span>2. Attention Mechanism & Multi-Head Structure</span>
+    <span class="badge badge-blue">Faithful Specification</span>
+  </div>
+  <p><strong>Base Paper (Section III-C & III-G):</strong> Specifies 3 GNN layers, hidden dimension 128, ReLU, dropout 0.2, and <em>"Attention-based neighborhood aggregation"</em>. Does not specify head count $K$, head dimension, or aggregation strategy.</p>
+  <p style="margin-top:0.75rem;"><strong>Prometheus Implementation (<code>models/prometheus.py:L64-L79</code>):</strong> Explicitly realizes the paper's specification with PyG's <code>GATConv</code>:</p>
+  <div class="code-block"># Layers 1 & 2: 4 heads * 32 hidden = 128 dimensions concatenated
+self.convs.append(GATConv(in_ch, 32, heads=4, dropout=0.2, edge_dim=edge_dim))
+
+# Layer 3: 1 head with 128 hidden channels (no concatenation)
+self.convs.append(GATConv(128, 128, heads=1, concat=False, dropout=0.2, edge_dim=edge_dim))</div>
+</div>
+
+<div class="card diff-card">
+  <div class="diff-title">
+    <span>3. Layer Normalization & Regularization</span>
+    <span class="badge badge-purple">Prometheus Addition</span>
+  </div>
+  <p><strong>Base Paper:</strong> Only mentions GNN Layer &rarr; ReLU &rarr; Dropout(0.2). No normalization layer is included in the paper's formulas or text.</p>
+  <p style="margin-top:0.75rem;"><strong>Prometheus Implementation (<code>models/prometheus.py:L79, L108</code>):</strong> Introduces an explicit <code>LayerNorm(128)</code> after every GAT layer:</p>
+  <div class="code-block">h = conv(h, edge_index, edge_attr=edge_attr)
+h = torch.relu(h)
+h = self.layer_norms[i](h)  # nn.LayerNorm(128)
+h = self.dropout_layer(h)   # nn.Dropout(0.2)</div>
+  <div class="alert alert-blue">
+    <strong>Impact:</strong> Stabilizes gradient magnitudes and prevents activation explosion when training continuously across diverse botnet scenario streams.
+  </div>
+</div>
+
+<div class="card diff-card">
+  <div class="diff-title">
+    <span>4. Edge Attributes in Message Passing</span>
+    <span class="badge badge-purple">Prometheus Addition</span>
+  </div>
+  <p><strong>Base Paper (Section III-B & III-C):</strong> Nodes have features $X$, edges $E$ only denote connectivity topology. Edge attributes are not used in message passing (Equation 3).</p>
+  <p style="margin-top:0.75rem;"><strong>Prometheus Implementation (<code>models/prometheus.py:L48, L91</code>):</strong> Accepts <code>edge_dim</code> and conditions attention weights on edge features:</p>
+  <div class="code-block">h = conv(h, edge_index, edge_attr=edge_attr)</div>
+  <p>In the CTU-13 pipeline, this injects 37-dimensional flow features (durations, bytes, packets, TCP flags, port service buckets, relative window timestamps) directly into the graph attention operator.</p>
+</div>
+
+<div class="card diff-card">
+  <div class="diff-title">
+    <span>5. Continual Learning & Rehearsal Buffer Mechanics</span>
+    <span class="badge badge-green">Exact Match</span>
+  </div>
+  <p><strong>Base Paper (Section III-D):</strong> 10% reservoir sampling buffer with joint objective $\mathcal{L} = \mathcal{L}_{new}(\mathcal{D}_t) + \lambda \mathcal{L}_{rehearsal}(\mathcal{D}_{buf})$.</p>
+  <p style="margin-top:0.75rem;"><strong>Prometheus Implementation (<code>models/rehearsal_buffer.py</code>):</strong> Exact implementation of Algorithm R reservoir sampling and replay loss:</p>
+  <div class="code-block"># Reservoir sampling: probability max_size / total_seen
+idx = random.randint(0, self.total_seen - 1)
+if idx < self.max_size:
+    self.buffer[idx] = data  # Evict uniform random sample</div>
+  <div class="alert alert-green">
+    <strong>Leakage Control in Prometheus:</strong> <code>buffer.add(data)</code> is called strictly <em>after</em> the optimization step on <code>data</code>, ensuring no self-rehearsal leakage occurs on the same step.
+  </div>
+</div>
+
+<div class="card diff-card">
+  <div class="diff-title">
+    <span>6. Batching & Optimization Strategy</span>
+    <span class="badge badge-yellow">Engineering Difference</span>
+  </div>
+  <p><strong>Base Paper (Section III-G):</strong> Minibatch size 256, 200 epochs per scenario, Adam ($	ext{lr}=10^{-3}, 	ext{wd}=10^{-5}$), 5 seeds reporting mean &plusmn; std.</p>
+  <p style="margin-top:0.75rem;"><strong>Prometheus Implementation (<code>scripts/train_prometheus.py</code>):</strong></p>
+  <ul style="margin-left:1.5rem; margin-top:0.5rem;">
+    <li><strong>Optimizer:</strong> Adam ($	ext{lr}=10^{-3}, 	ext{wd}=10^{-5}$) &mdash; <strong>Exact Match</strong>.</li>
+    <li><strong>Batching:</strong> $\mathcal{L}_{new}$ iterates graph-by-graph (batch=1); $\mathcal{L}_{rehearsal}$ samples up to 256 historical graphs from buffer.</li>
+    <li><strong>Imbalance handling:</strong> Computes <code>pos_weight</code> (capped at 50.0) for <code>BCEWithLogitsLoss</code>.</li>
+    <li><strong>Gradient clipping:</strong> Enforces <code>clip_grad_norm_(1.0)</code>.</li>
+    <li><strong>Epochs:</strong> 5 epochs with <code>ReduceLROnPlateau</code> and early stopping (patience=5).</li>
+  </ul>
+</div>
+
+<h2>3. Comprehensive Comparison Matrix</h2>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>Architectural Element</th>
+        <th>Base Paper (Pomsathit, 2025)</th>
+        <th>Prometheus (In This Folder)</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>GNN Layers</strong></td>
+        <td>3 layers</td>
+        <td>3 layers</td>
+        <td><span class="badge badge-green">Exact Match</span></td>
+      </tr>
+      <tr>
+        <td><strong>Hidden Channels</strong></td>
+        <td>128</td>
+        <td>128</td>
+        <td><span class="badge badge-green">Exact Match</span></td>
+      </tr>
+      <tr>
+        <td><strong>Activation Function</strong></td>
+        <td>ReLU</td>
+        <td>ReLU</td>
+        <td><span class="badge badge-green">Exact Match</span></td>
+      </tr>
+      <tr>
+        <td><strong>Dropout Rate</strong></td>
+        <td>0.2</td>
+        <td>0.2</td>
+        <td><span class="badge badge-green">Exact Match</span></td>
+      </tr>
+      <tr>
+        <td><strong>Attention Mechanism</strong></td>
+        <td>Attention-based neighborhood aggregation</td>
+        <td>PyG GATConv (4 heads &rarr; 4 heads &rarr; 1 head)</td>
+        <td><span class="badge badge-blue">Faithful Implementation</span></td>
+      </tr>
+      <tr>
+        <td><strong>Layer Normalization</strong></td>
+        <td>None mentioned</td>
+        <td><code>nn.LayerNorm(128)</code> after each layer</td>
+        <td><span class="badge badge-purple">Prometheus Addition</span></td>
+      </tr>
+      <tr>
+        <td><strong>Edge Features in GNN</strong></td>
+        <td>None (pure node aggregation)</td>
+        <td>Supported (37-dim flow attributes)</td>
+        <td><span class="badge badge-purple">Prometheus Addition</span></td>
+      </tr>
+      <tr>
+        <td><strong>Readout / Pooling</strong></td>
+        <td><strong>None</strong> (operates on node representations)</td>
+        <td><code>global_mean_pool(h, batch)</code></td>
+        <td><span class="badge badge-red">Structural Difference</span></td>
+      </tr>
+      <tr>
+        <td><strong>Output Layer</strong></td>
+        <td>Node-wise Softmax: $	ext{softmax}(W_o h_v + b_o)$</td>
+        <td>Graph-level logit: <code>Linear(128, 1)</code> + Sigmoid</td>
+        <td><span class="badge badge-red">Structural Difference</span></td>
+      </tr>
+      <tr>
+        <td><strong>Loss Function</strong></td>
+        <td>Standard Cross-Entropy</td>
+        <td><code>BCEWithLogitsLoss</code> + <code>pos_weight</code> (cap=50.0)</td>
+        <td><span class="badge badge-yellow">Binary Adaptation</span></td>
+      </tr>
+      <tr>
+        <td><strong>Rehearsal Buffer</strong></td>
+        <td>10% reservoir sampling</td>
+        <td>10% reservoir sampling (<code>RehearsalBuffer</code>)</td>
+        <td><span class="badge badge-green">Exact Match</span></td>
+      </tr>
+      <tr>
+        <td><strong>Continual Loss</strong></td>
+        <td>$\mathcal{L}_{new} + \lambda \mathcal{L}_{rehearsal}$</td>
+        <td>$\mathcal{L}_{new} + \lambda \mathcal{L}_{rehearsal}$ ($\lambda=1.0$)</td>
+        <td><span class="badge badge-green">Exact Match</span></td>
+      </tr>
+      <tr>
+        <td><strong>Optimizer & Weight Decay</strong></td>
+        <td>Adam ($	ext{lr}=10^{-3}, 	ext{wd}=10^{-5}$)</td>
+        <td>Adam ($	ext{lr}=10^{-3}, 	ext{wd}=10^{-5}$)</td>
+        <td><span class="badge badge-green">Exact Match</span></td>
+      </tr>
+      <tr>
+        <td><strong>New Data Batch Size</strong></td>
+        <td>256 graphs per batch</td>
+        <td>1 graph per step (stream iteration)</td>
+        <td><span class="badge badge-yellow">Engineering Difference</span></td>
+      </tr>
+      <tr>
+        <td><strong>Replay Batch Size</strong></td>
+        <td>256 graphs</td>
+        <td>Up to 256 graphs via <code>PyGBatch</code></td>
+        <td><span class="badge badge-green">Exact Match</span></td>
+      </tr>
+      <tr>
+        <td><strong>Gradient Clipping</strong></td>
+        <td>None mentioned</td>
+        <td><code>clip_grad_norm_(1.0)</code></td>
+        <td><span class="badge badge-purple">Prometheus Addition</span></td>
+      </tr>
+      <tr>
+        <td><strong>Training Epochs</strong></td>
+        <td>200 epochs per scenario</td>
+        <td>5 epochs with early stopping & ReduceLROnPlateau</td>
+        <td><span class="badge badge-yellow">Computational Difference</span></td>
+      </tr>
+      <tr>
+        <td><strong>Evaluation Protocol</strong></td>
+        <td>In-distribution random split, 5 seeds</td>
+        <td>Held-out unseen family split, single seed</td>
+        <td><span class="badge badge-blue">Harder Split Protocol</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="margin-top:2rem;">
+  <h3>Summary Verdict</h3>
+  <p>Prometheus successfully implements the base paper's <strong>core model definition</strong> (3 GNN layers, 128 hidden units, attention aggregation, ReLU, 0.2 dropout, Adam optimizer, 10% reservoir rehearsal buffer, and joint replay loss). The differences are purposeful:</p>
+  <ul style="margin: 0.75rem 0 0 1.5rem;">
+    <li><strong>Graph-Level Readout:</strong> Aligns the model with the paper's actual whole-graph evaluation benchmark.</li>
+    <li><strong>LayerNorm & Gradient Clipping:</strong> Adds stabilization needed for deep GNNs over continuous graph streams.</li>
+    <li><strong>Edge Attributes:</strong> Exploits rich NetFlow communication statistics that were not present in the paper's host logs.</li>
+  </ul>
+</div>
+
+</body>
+</html>
