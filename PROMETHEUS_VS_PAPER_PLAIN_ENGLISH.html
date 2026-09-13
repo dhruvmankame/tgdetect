@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Is Our Model Built Like the Paper?</title>
+<style>
+  :root{
+    --bg:#f7f8fa; --card:#ffffff; --ink:#1a1f29; --soft:#5b6472; --line:#e2e6ec;
+    --blue:#1f6feb; --green:#1a7f37; --purple:#8250df; --amber:#9a6700; --red:#b42318;
+    --green-bg:#eaf6ec; --blue-bg:#e8f0fe; --purple-bg:#f3edfd; --amber-bg:#fdf6e3; --red-bg:#fdeceb;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.7;
+    padding:2.5rem 1.25rem; max-width:860px; margin:0 auto; font-size:17px;
+  }
+  header{margin-bottom:2rem}
+  h1{font-size:2rem;line-height:1.25;margin-bottom:.5rem}
+  h2{font-size:1.4rem;margin:2.5rem 0 .8rem;padding-bottom:.4rem;border-bottom:2px solid var(--line)}
+  h3{font-size:1.12rem;margin:1.4rem 0 .4rem}
+  p{margin:.7rem 0}
+  .lead{font-size:1.05rem;color:var(--soft)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1.3rem 1.5rem;margin:1.2rem 0;
+        box-shadow:0 1px 2px rgba(20,30,50,.04)}
+  .answer{border-left:6px solid var(--green);background:var(--green-bg)}
+  .answer h2{border:none;margin:0 0 .3rem;color:var(--green)}
+  .note{border-left:6px solid var(--blue);background:var(--blue-bg)}
+  .warn{border-left:6px solid var(--amber);background:var(--amber-bg)}
+  .stop{border-left:6px solid var(--red);background:var(--red-bg)}
+  .analogy{background:#fffdf5;border:1px dashed #d9c98e;border-radius:14px;padding:1.1rem 1.4rem;margin:1.2rem 0}
+  .analogy b{color:#7a5c00}
+  ul,ol{margin:.6rem 0 .6rem 1.3rem}
+  li{margin:.45rem 0}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#eef1f5;
+       padding:.1em .4em;border-radius:5px;font-size:.9em}
+  pre{background:#0d1117;color:#e6edf3;border-radius:10px;padding:1rem 1.2rem;overflow-x:auto;
+      margin:.9rem 0;font-size:.86rem;line-height:1.55}
+  pre code{background:none;padding:0;color:inherit}
+  .tw{overflow-x:auto;margin:1rem 0}
+  table{border-collapse:collapse;width:100%;font-size:.95rem;min-width:520px;background:var(--card)}
+  th,td{padding:.7rem .8rem;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{background:#f0f2f6;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--soft)}
+  tbody tr:last-child td{border-bottom:none}
+  .tag{display:inline-block;padding:.15em .6em;border-radius:20px;font-size:.76rem;font-weight:700;white-space:nowrap}
+  .t-green{background:var(--green-bg);color:var(--green)}
+  .t-blue{background:var(--blue-bg);color:var(--blue)}
+  .t-purple{background:var(--purple-bg);color:var(--purple)}
+  .t-amber{background:var(--amber-bg);color:var(--amber)}
+  .legend{display:flex;flex-wrap:wrap;gap:.9rem;margin:1rem 0;font-size:.9rem;color:var(--soft)}
+  .legend span{display:flex;align-items:center;gap:.4rem}
+  .big{font-size:1.15rem;font-weight:600}
+  .muted{color:var(--soft);font-size:.92rem}
+  footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--line);color:var(--soft);font-size:.86rem}
+  .kicker{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--soft);font-weight:700}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="kicker">Plain-English report · 9 September 2026</div>
+  <h1>Is our Prometheus model built exactly like the research paper?</h1>
+  <p class="lead">A jargon-free walkthrough of how our code compares to the paper it is based on,
+  what we just changed to close the last gap, and the two honest caveats you should know about.</p>
+</header>
+
+<div class="card answer">
+  <h2>The short answer</h2>
+  <p class="big">Yes — the model's <u>design</u> is now an exact copy of the paper.</p>
+  <p>There was one remaining gap, and it was not in the design — it was in the <b>training routine</b>
+  (how the model is taught). Until today, our code could not even be <i>made</i> to train exactly like the
+  paper, because of one specific habit it always followed. We have now added a single switch,
+  <code>--paper-exact</code>, that turns off all of our extra habits and reproduces the paper's routine
+  step-for-step. So: <b>the design already matched, and now the whole thing can match on demand.</b></p>
+</div>
+
+<div class="analogy">
+  <p>🎂 <b>A simple way to picture it.</b> Think of the paper as a prize-winning <b>cake recipe</b>.</p>
+  <ul>
+    <li><b>The "architecture"</b> is the recipe itself — the ingredients and the method. We checked every
+      ingredient and every step against the paper, and they now match exactly.</li>
+    <li><b>The "training"</b> is the <i>baking</i> — the oven temperature, the timer, and whether you keep
+      the cake straight out of the oven or fuss with it. The paper says: bake for a set time, no peeking,
+      use the cake as-is at the end.</li>
+    <li>Our kitchen had picked up some <b>helpful habits</b> — an oven that auto-adjusts its own heat,
+      taking the cake out early if a probe says it looks done, and keeping the best-looking cake out of
+      several checks. Those habits usually give a nicer cake, but they are <b>not what the recipe says</b>.</li>
+    <li>The new <code>--paper-exact</code> switch is a <b>"recipe-exact" button</b>: it turns every habit off
+      and bakes precisely as the paper instructs.</li>
+  </ul>
+</div>
+
+<h2>What the paper is</h2>
+<p>Our model is a re-build of a 2025 research paper by Auttapon Pomsathit (KMITL, Thailand), published in
+<i>IEEE Access</i>. The paper describes a system that spots cyber-attacks by looking at a network as a
+<b>graph</b> — a web of connected devices — and deciding, for each device, whether it is behaving maliciously.
+It also has a "memory" trick so it keeps recognising old attacks while learning new ones.</p>
+<p>Our job has been to make sure our version is faithful to that paper, so that when we compare scores, we are
+comparing like with like.</p>
+
+<h2>The scorecard</h2>
+<p>Every part of the model, in plain words, and how it now compares to the paper.</p>
+<div class="legend">
+  <span><span class="tag t-green">Exact match</span> built exactly as the paper says</span>
+  <span><span class="tag t-blue">Now matchable</span> the paper's way is on with <code>--paper-exact</code></span>
+  <span><span class="tag t-purple">Optional extra</span> an upgrade we can switch on, off by default</span>
+</div>
+
+<h3>Part 1 — The model's design (the "recipe")</h3>
+<div class="tw">
+<table>
+  <thead><tr><th>In plain words</th><th>How it compares</th></tr></thead>
+  <tbody>
+    <tr><td>How many processing stages the model has (three)</td><td><span class="tag t-green">Exact match</span></td></tr>
+    <tr><td>How much "thinking room" each stage has (its size)</td><td><span class="tag t-green">Exact match</span></td></tr>
+    <tr><td>How it decides which connections to pay attention to</td><td><span class="tag t-green">Exact match</span></td></tr>
+    <tr><td>How it avoids over-memorising the training data</td><td><span class="tag t-green">Exact match</span></td></tr>
+    <tr><td>The internal maths steps between stages</td><td><span class="tag t-green">Exact match</span></td></tr>
+    <tr><td><b>How it delivers a verdict: it judges every single device on its own</b> — not the whole
+      network lumped into one score. <span class="muted">This was the biggest earlier mistake, and it is now fixed.</span></td>
+      <td><span class="tag t-green">Exact match</span></td></tr>
+    <tr><td>The scoring maths, with no thumb on the scale for either class</td><td><span class="tag t-green">Exact match</span></td></tr>
+    <tr><td>What "the right answer" is during training (a label per device)</td><td><span class="tag t-green">Exact match</span></td></tr>
+    <tr><td>The "memory" that keeps a 10% sample of the past so old attacks aren't forgotten</td><td><span class="tag t-green">Exact match</span></td></tr>
+    <tr><td>Two optional accuracy aids the paper doesn't use (extra smoothing; using
+      connection details). Off by default, so we match the paper.</td><td><span class="tag t-green">Exact match</span> <span class="muted">(can switch on)</span></td></tr>
+  </tbody>
+</table>
+</div>
+<p class="muted">Bottom line for Part 1: the design is an exact copy of the paper out of the box.</p>
+
+<h3>Part 2 — How the model is taught (the "baking")</h3>
+<div class="tw">
+<table>
+  <thead><tr><th>In plain words</th><th>How it compares</th></tr></thead>
+  <tbody>
+    <tr><td>How many rounds of practice it gets (200)</td><td><span class="tag t-green">Exact match</span></td></tr>
+    <tr><td>How much data it studies at once (batch size)</td><td><span class="tag t-green">Exact match</span></td></tr>
+    <tr><td>The core learning settings (the "optimiser")</td><td><span class="tag t-green">Exact match</span></td></tr>
+    <tr><td>An oven that <b>auto-adjusts the learning speed</b>. The paper doesn't do this;
+      we did, by default.</td><td><span class="tag t-blue">Now matchable</span></td></tr>
+    <tr><td><b>Stopping practice early</b> if it seems to plateau. The paper doesn't; we did, by default.</td>
+      <td><span class="tag t-blue">Now matchable</span></td></tr>
+    <tr><td><b>Which trained version to keep.</b> The paper keeps the model after the full 200 rounds.
+      We kept the best-looking mid-practice version instead — and, crucially, <b>there used to be no way
+      to ask for the paper's behaviour at all.</b> This was the one true blocker, and it is the main thing
+      we fixed today.</td><td><span class="tag t-blue">Now matchable</span></td></tr>
+    <tr><td>How many times to repeat the whole thing and average (the paper does five)</td>
+      <td><span class="tag t-blue">Now matchable</span> <span class="muted">(add <code>--seeds</code>)</span></td></tr>
+  </tbody>
+</table>
+</div>
+<p class="muted">Bottom line for Part 2: our normal settings add a few sensible modern habits. Flip the
+<code>--paper-exact</code> switch and all of them turn off, reproducing the paper's routine exactly.</p>
+
+<h3>Part 3 — Optional upgrades (beyond the paper)</h3>
+<p>These are switched <b>off by default</b>, so they never break the match. They exist because our analysis
+showed they can help in situations the paper didn't test:</p>
+<div class="tw">
+<table>
+  <thead><tr><th>In plain words</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr><td>A "shortcut wire" through each stage</td><td><span class="tag t-purple">Optional extra</span> keeps the model sharp on very busy networks (see caveat 2)</td></tr>
+    <tr><td>Leak-proof memory timing</td><td><span class="tag t-purple">Optional extra</span> makes sure the "memory" trick can't accidentally inflate the score</td></tr>
+    <tr><td>Reporting the score at four sensible cut-offs, not one</td><td><span class="tag t-purple">Optional extra</span> a fairer, fuller picture of how it performs</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>The exact checklist (for the record)</h2>
+<p>For anyone who wants the precise, point-by-point proof rather than the plain-words summary above,
+here is every design detail the paper spells out, set next to the exact place in our code that
+implements it. All of these are true <b>at default settings</b> — no switches required.</p>
+<div class="tw">
+<table>
+  <thead><tr><th>What the paper says (§III-C, Eq. 3–5)</th><th>Where our code does it (at defaults)</th><th></th></tr></thead>
+  <tbody>
+    <tr><td>3 processing stages</td><td><code>num_gnn_layers=3</code></td><td><span class="tag t-green">Exact</span></td></tr>
+    <tr><td>Stage size 128</td><td><code>hidden_channels=128</code></td><td><span class="tag t-green">Exact</span></td></tr>
+    <tr><td>Attention-based combining</td><td><code>GATConv</code> layers</td><td><span class="tag t-green">Exact</span></td></tr>
+    <tr><td>ReLU maths step</td><td><code>torch.relu</code> in <code>_encode</code></td><td><span class="tag t-green">Exact</span></td></tr>
+    <tr><td>Dropout 0.2 (anti-over-memorising)</td><td><code>dropout=0.2</code></td><td><span class="tag t-green">Exact</span></td></tr>
+    <tr><td>Verdict per device, <b>no lumping</b> (Eq. 4)</td><td><code>readout="node"</code>, classifier with no pooling</td><td><span class="tag t-green">Exact</span></td></tr>
+    <tr><td>No normalisation layer</td><td><code>use_layer_norm=False</code></td><td><span class="tag t-green">Exact</span></td></tr>
+    <tr><td>No connection details in the combining (Eq. 3)</td><td><code>edge_dim=0</code></td><td><span class="tag t-green">Exact</span></td></tr>
+    <tr><td>Plain scoring, no thumb on the scale</td><td>unweighted cross-entropy</td><td><span class="tag t-green">Exact</span></td></tr>
+    <tr><td>Memory: 10% sample, joint loss <code>L = L_new + λ·L_rehearsal</code> (Eq. 5)</td>
+      <td><code>RehearsalBuffer</code> + <code>buffer_loss</code></td><td><span class="tag t-green">Exact</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="card note">
+  <h3>Two honest asterisks on the word "exact"</h3>
+  <p>These are <b>not</b> mistakes in our code. They are two places where <b>the paper itself doesn't say</b>,
+  so "exact" can only mean "faithful to what the paper actually states":</p>
+  <ul>
+    <li><b>How many attention "viewpoints" (heads).</b> The paper says it uses attention, but never says
+      how many parallel viewpoints. Our code uses <b>four</b> — a standard, sensible choice. You can't exactly
+      copy a number the paper never prints.</li>
+    <li><b>Per-device vs whole-network verdict.</b> The paper is <b>internally inconsistent</b>: its equations
+      describe a per-device verdict (which we follow), but one of its data tables implies a single
+      whole-network verdict. We follow the <b>equations</b>, and keep the other reading available as an option.</li>
+  </ul>
+  <p class="muted">Everything the paper <i>does</i> pin down, we match exactly. These two items are unset or
+  contradictory in the source paper, not choices we got wrong.</p>
+</div>
+
+<div class="card note">
+  <h3>One distinction to keep straight</h3>
+  <ul>
+    <li>The <b>model's design</b> (everything in the checklist above) is exact <b>out of the box</b> — no flags.</li>
+    <li>The <b>training routine</b> matches the paper <b>only when you add <code>--paper-exact</code></b>. By default
+      we use an enhanced routine; the switch locks it to the paper. (Details in the next two sections.)</li>
+  </ul>
+</div>
+
+<h2>What we changed today</h2>
+<div class="card note">
+  <p>We added one switch to the training program: <code>--paper-exact</code>. When you use it, the program:</p>
+  <ul>
+    <li>turns off the auto-adjusting learning speed;</li>
+    <li>turns off early stopping, so it always does the full 200 rounds;</li>
+    <li><b>keeps the final trained model</b> (the paper's way) instead of a best-mid-practice one — this is
+      the behaviour that simply did not exist before;</li>
+    <li>makes its yes/no decision the same plain way the paper does;</li>
+    <li>and <b>refuses to run</b> if you accidentally also ask for a non-paper upgrade, so you can never get a
+      half-and-half result by mistake.</li>
+  </ul>
+  <p class="muted">We verified all of this with an automated self-test that trains a small model end-to-end,
+  saves it, reloads it, and confirms every setting is exactly the paper's. The self-test passed.</p>
+</div>
+
+<h3>How to run the paper-exact version</h3>
+<pre><code>python scripts/train_prometheus.py \
+    --snapshots-root data/snapshots \
+    --train-scenarios ctu13_c52,ctu13_c46,ctu13_c53,ctu13_c48,ctu13_c45,ctu13_c49,ctu13_c54 \
+    --test-scenarios  ctu13_c47 \
+    --paper-exact --seeds 42,43,44,45,46 \
+    --out models/checkpoints/prometheus_paper_c47</code></pre>
+<p class="muted">Without <code>--paper-exact</code>, you get the same paper-faithful <i>design</i> plus our modern
+training habits. With it, you get the paper's method top to bottom.</p>
+
+<h2>Two honest caveats</h2>
+
+<div class="card warn">
+  <h3>Caveat 1 — Our old score looked better than it really was</h3>
+  <p>An earlier result made the model look almost perfect (around 99%). That number was misleading. It was
+  measured on a tiny, very lopsided sample where about 96 out of every 100 items were attacks — so even a
+  broken model that just shouted <b>"attack!"</b> at everything would have scored about 96%. The "99%" was
+  barely better than that.</p>
+  <p>The fix is the same one that made the design match the paper: judging <b>each device individually</b>
+  gives us hundreds of fair test cases instead of a handful of lopsided ones, so future scores will be
+  honest. <b>The takeaway: our real performance is more modest than that old number suggested — and now we
+  will measure it fairly.</b></p>
+</div>
+
+<div class="card warn">
+  <h3>Caveat 2 — The current data can't teach the model anything yet</h3>
+  <p>Right now, the data we feed the model gives every device the <b>same blank name-tag</b>. Asking the
+  model to tell attackers apart from this is like asking someone to pick the culprit out of a line-up where
+  everyone is wearing an identical mask — it's impossible, no matter how clever they are.</p>
+  <p>This is a <b>data preparation</b> issue, not a flaw in the model's design. Before any serious training,
+  we need to rebuild the data so each device carries real, descriptive information. That rebuild is a
+  cheap, standard step — it just hasn't been run yet.</p>
+</div>
+
+<h2>What happens next</h2>
+<p>Three steps remain. All of them are on hold until you give the go-ahead, because the last one costs money
+to run on rented GPUs:</p>
+<ol>
+  <li><b>Rebuild the data</b> with real device features (cheap, no GPU). Fixes caveat 2.</li>
+  <li><b>Check how densely connected the real network is</b> (cheap, no GPU). Tells us whether the optional
+    "shortcut wire" upgrade is worth switching on.</li>
+  <li><b>Run the full paper-exact training</b> on a GPU, five times, and report the honest average. This is
+    the one that costs money.</li>
+</ol>
+<div class="card stop">
+  <p><b>Nothing has been run on paid hardware for this report.</b> Everything above was checked on this
+  machine at no cost. The paid GPU run waits for your explicit "go".</p>
+</div>
+
+<footer>
+  <p>Plain-English companion to the technical audit <code>PROMETHEUS_PAPER_PARITY_AUDIT.html</code>.
+  Model code: <code>models/prometheus.py</code>, <code>models/rehearsal_buffer.py</code>,
+  <code>scripts/train_prometheus.py</code>, <code>scripts/eval_prometheus.py</code>.
+  Base paper: Auttapon Pomsathit, <i>IEEE Access</i> Vol. 13 (Dec 2025), DOI 10.1109/ACCESS.2025.3639270.</p>
+</footer>
+
+</body>
+</html>

@@ -54,8 +54,11 @@ def parse_args() -> argparse.Namespace:
         "--node-feature-mode",
         type=str,
         default="type_degree",
-        choices=["type_degree", "type_only"],
-        help="Node feature composition",
+        choices=["type_degree", "type_only", "flow_agg"],
+        help="Node feature composition. 'type_only' is leakage-free but is a "
+             "constant column on CTU-13, which makes any node-wise GNN that "
+             "ignores edge_attr degenerate; use 'flow_agg' for those. "
+             "'type_degree' is LEAKY — never for a generalisation claim.",
     )
     parser.add_argument(
         "--edge-feature-mode",

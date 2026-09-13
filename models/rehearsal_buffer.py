@@ -1,72 +1,60 @@
-"""Rehearsal buffer with reservoir sampling for Prometheus continual learning.
-
-Paper: 10% reservoir sampling — each incoming sample has probability p =
-buffer_size / total_seen of being added; if added, it evicts a uniformly
-random existing sample.
-"""
+"""Reservoir rehearsal buffer for the paper-faithful Prometheus path."""
 
 from __future__ import annotations
 
 import random
-from typing import Optional
+from typing import Iterable
 
 import torch
-from torch_geometric.data import Data
+from torch_geometric.data import Batch, Data
 
 
 class RehearsalBuffer:
-    """Fixed-size reservoir buffer for graph-level Data objects."""
+    """Fixed-capacity uniform reservoir (Algorithm R) over graph samples.
 
-    def __init__(self, max_size: int) -> None:
-        self.max_size = max_size
+    Capacity is configured by the trainer to exactly 10% of the unique
+    training graph samples, matching the paper's reported rehearsal storage.
+    Each graph is inserted only once after its scenario has finished training,
+    so 200 epochs do not create 200 duplicate copies of the same sample.
+    """
+
+    def __init__(self, max_size: int, seed: int = 0) -> None:
+        if max_size < 1:
+            raise ValueError("max_size must be >= 1")
+        self.max_size = int(max_size)
         self.buffer: list[Data] = []
         self.total_seen = 0
+        self._rng = random.Random(seed)
 
     def add(self, data: Data) -> None:
-        """Add a single graph to the buffer via reservoir sampling."""
+        # Keep replay storage on CPU even when the model trains on GPU.
+        data = data.cpu()
         self.total_seen += 1
         if len(self.buffer) < self.max_size:
             self.buffer.append(data)
-        else:
-            # Replace a random entry with probability max_size / total_seen
-            idx = random.randint(0, self.total_seen - 1)
-            if idx < self.max_size:
-                self.buffer[idx] = data
+            return
+        j = self._rng.randrange(self.total_seen)
+        if j < self.max_size:
+            self.buffer[j] = data
 
-    def sample(self, n: int, device: torch.device) -> list[Data]:
-        """Sample n items uniformly from the buffer (without replacement)."""
+    def add_many(self, items: Iterable[Data]) -> None:
+        for item in items:
+            self.add(item)
+
+    def sample(self, n: int) -> list[Data]:
         if not self.buffer:
             return []
-        n = min(n, len(self.buffer))
-        return random.sample(self.buffer, n)
+        n = min(int(n), len(self.buffer))
+        return self._rng.sample(self.buffer, n)
+
+    def sample_batch(self, n: int, device: torch.device) -> Batch | None:
+        items = self.sample(n)
+        if not items:
+            return None
+        return Batch.from_data_list(items).to(device)
 
     def __len__(self) -> int:
         return len(self.buffer)
 
     def __bool__(self) -> bool:
-        return len(self.buffer) > 0
-
-
-def buffer_loss(
-    model: torch.nn.Module,
-    buffer: RehearsalBuffer,
-    criterion: torch.nn.Module,
-    device: torch.device,
-    batch_size: int = 256,
-    lambda_rehearsal: float = 1.0,
-) -> Optional[torch.Tensor]:
-    """Compute rehearsal loss: L_rehearsal(D_buf).
-
-    Returns None if buffer is empty.
-    """
-    if not buffer:
-        return None
-    items = buffer.sample(batch_size, device)
-    if not items:
-        return None
-
-    from torch_geometric.data import Batch as PyGBatch
-    batch = PyGBatch.from_data_list(items).to(device)
-    logits = model(batch.x, batch.edge_index, batch.batch, batch.edge_attr)
-    loss = criterion(logits.squeeze(-1), batch.y)
-    return lambda_rehearsal * loss
+        return bool(self.buffer)

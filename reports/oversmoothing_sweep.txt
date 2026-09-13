@@ -1,0 +1,64 @@
+/home/kali/tgdetect-v2/tgdetect/venv/lib/python3.14/site-packages/torch/jit/_script.py:1485: FutureWarning: `torch.jit.script` is not supported in Python 3.14+ and may break. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+==============================================================================
+OVER-SMOOTHING SWEEP — paper hyperparameters (hidden=128, heads=4,
+dropout=0.2, Adam 1e-3/1e-5, no LayerNorm, node-wise Eq. 4 readout)
+20 windows x 150 nodes, 39-dim features, 6 signal dims at cohen-d 1.0, pos rate 15%
+==============================================================================
+
+--- avg degree 2 (edges/window ~ 150) ---
+  logistic-regression ceiling on raw features: AUC-ROC 0.9591  AUC-PR 0.8362
+  layers  residual   AUC-ROC    AUC-PR  distinct preds
+       1     False    0.8064    0.4227          99.3%  
+       1      True    0.9318    0.7674          99.0%  
+       2     False    0.8791    0.5643          96.7%  
+       2      True    0.9352    0.7783          80.0%  
+       3     False    0.8265    0.4715          94.9%  paper
+       3      True    0.9318    0.7837          59.1%  
+
+--- avg degree 6 (edges/window ~ 450) ---
+  logistic-regression ceiling on raw features: AUC-ROC 0.9561  AUC-PR 0.8668
+  layers  residual   AUC-ROC    AUC-PR  distinct preds
+       1     False    0.7589    0.3609          99.8%  
+       1      True    0.9316    0.8118          98.9%  
+       2     False    0.8061    0.5516          99.9%  
+       2      True    0.9372    0.8230          67.2%  
+       3     False    0.7055    0.3547         100.0%  paper
+       3      True    0.9360    0.8151          47.1%  
+
+--- avg degree 12 (edges/window ~ 900) ---
+  logistic-regression ceiling on raw features: AUC-ROC 0.9617  AUC-PR 0.8813
+  layers  residual   AUC-ROC    AUC-PR  distinct preds
+       1     False    0.8126    0.4050          99.8%  
+       1      True    0.9396    0.8412          98.6%  
+       2     False    0.7728    0.4157         100.0%  
+       2      True    0.9455    0.8568          64.2%  
+       3     False    0.6406    0.2602          99.8%  paper
+       3      True    0.9422    0.8401          46.0%  
+
+--- avg degree 24 (edges/window ~ 1800) ---
+  logistic-regression ceiling on raw features: AUC-ROC 0.9544  AUC-PR 0.8042
+  layers  residual   AUC-ROC    AUC-PR  distinct preds
+       1     False    0.8331    0.3695          99.7%  
+       1      True    0.9496    0.7886          98.2%  
+       2     False    0.6764    0.2669          99.8%  
+       2      True    0.9451    0.7791          73.9%  
+       3     False    0.5762    0.1937          98.6%  paper
+       3      True    0.9331    0.7549          50.3%  
+
+--- avg degree 48 (edges/window ~ 3600) ---
+  logistic-regression ceiling on raw features: AUC-ROC 0.9510  AUC-PR 0.8093
+  layers  residual   AUC-ROC    AUC-PR  distinct preds
+       1     False    0.8937    0.5510          99.7%  
+       1      True    0.9382    0.7887          97.1%  
+       2     False    0.5692    0.2172          99.4%  
+       2      True    0.9371    0.7701          74.4%  
+       3     False    0.5134    0.1701          98.0%  paper
+       3      True    0.9333    0.7684          50.6%  
+
+==============================================================================
+Read: a collapsed run shows ~0% distinct predictions and AUC-ROC ~0.5
+regardless of how separable the features are.
+==============================================================================
+
+[exited with code 0]

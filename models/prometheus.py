@@ -1,143 +1,131 @@
-"""Prometheus: 3-layer attention GNN with rehearsal continual learning.
+"""Paper-faithful Prometheus GNN.
 
-Base paper: "Adaptive Detection of Advanced Persistent Threats (APT) With
-Graph Neural Networks and Rehearsal-Based Continual Learning on Wazuh EDR
-Telemetry" (IEEE Access, 2025) — Auttapon Pomsathit, KMITL.
+Reference:
+A. Pomsathit, "Adaptive Detection of Advanced Persistent Threats (APT)
+With Graph Neural Networks and Rehearsal-Based Continual Learning on
+Wazuh EDR Telemetry," IEEE Access, 2025.
 
-Architecture (matches paper):
-  3-layer GAT (hidden=128, 4 heads, dropout 0.2, ReLU)
-  Global mean pooling → graph-level logit
-  L = L_new(D_t) + λ * L_rehearsal(D_buf)   (λ=1.0)
-  Rehearsal buffer: 10% reservoir sampling
+The paper explicitly specifies:
+  * 3 GNN layers
+  * hidden dimension 128
+  * ReLU
+  * dropout 0.2
+  * attention-based neighborhood aggregation
+  * node-wise classification with softmax
 
-Task: graph-level classification (snapshot_label) on CTU-13.
+The paper does NOT specify the exact attention operator or number of heads.
+This implementation uses the minimal standard PyG concretization: single-head
+GATConv with 128 output features at every layer. No pooling, LayerNorm, edge
+conditioning, residual block, or other unreported architectural component is
+added.
 """
 
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch_geometric.data import Data
+from torch_geometric.nn import GATConv
 
-try:
-    import torch
-    import torch.nn as nn
-    from torch_geometric.data import Batch, Data
-    from torch_geometric.nn import GATConv, global_mean_pool
-except ImportError as exc:  # pragma: no cover
-    raise ImportError(
-        "Prometheus requires PyTorch and PyTorch Geometric. "
-        "Install them with: pip install -r requirements-ml.txt"
-    ) from exc
+PAPER_GNN_LAYERS = 3
+PAPER_HIDDEN_DIM = 128
+PAPER_DROPOUT = 0.2
+PAPER_NUM_CLASSES = 2
+PAPER_ATTENTION_HEADS = 1  # paper leaves head count unspecified; minimal choice
 
 
 class Prometheus(nn.Module):
-    """3-layer GAT for graph-level classification.
+    """Three-layer attention GNN with node-wise classification.
 
-    Paper equations:
-      h_v^(l+1) = σ(W^(l) * AGGREGATE(h_v^(l) ∪ {h_u^(l): u ∈ N(v)}))
-      y = softmax(W_o * POOL(h_v^(L)) + b_o)
+    Paper equations implemented conceptually as:
+      h_v^(l+1) = ReLU(W^(l) * ATTENTION_AGGREGATE(v, N(v)))
+      y_v = softmax(W_o * h_v^(L) + b_o)
+
+    ``forward`` returns raw class logits because ``CrossEntropyLoss`` applies
+    the softmax/log-softmax operation internally in a numerically stable way.
+    Use ``predict_proba`` when explicit probabilities are required.
     """
 
-    def __init__(
-        self,
-        in_channels: int,
-        hidden_channels: int = 128,
-        num_gnn_layers: int = 3,
-        dropout: float = 0.2,
-        edge_dim: int = 0,
-        heads: int = 4,
-    ) -> None:
+    def __init__(self, in_channels: int, num_classes: int = PAPER_NUM_CLASSES) -> None:
         super().__init__()
+        self.in_channels = int(in_channels)
+        self.hidden_channels = PAPER_HIDDEN_DIM
+        self.num_gnn_layers = PAPER_GNN_LAYERS
+        self.dropout_p = PAPER_DROPOUT
+        self.num_classes = int(num_classes)
 
-        self.in_channels = in_channels
-        self.hidden_channels = hidden_channels
-        self.num_gnn_layers = num_gnn_layers
-        self.dropout = dropout
-        self.heads = heads
+        self.convs = nn.ModuleList(
+            [
+                GATConv(
+                    self.in_channels,
+                    PAPER_HIDDEN_DIM,
+                    heads=PAPER_ATTENTION_HEADS,
+                    concat=False,
+                    dropout=0.0,
+                ),
+                GATConv(
+                    PAPER_HIDDEN_DIM,
+                    PAPER_HIDDEN_DIM,
+                    heads=PAPER_ATTENTION_HEADS,
+                    concat=False,
+                    dropout=0.0,
+                ),
+                GATConv(
+                    PAPER_HIDDEN_DIM,
+                    PAPER_HIDDEN_DIM,
+                    heads=PAPER_ATTENTION_HEADS,
+                    concat=False,
+                    dropout=0.0,
+                ),
+            ]
+        )
+        self.dropout = nn.Dropout(PAPER_DROPOUT)
+        self.classifier = nn.Linear(PAPER_HIDDEN_DIM, self.num_classes)
 
-        # GAT layers: first (num_gnn_layers-1) layers use multi-head attention;
-        # last layer uses single head (concat=False) for classification.
-        self.convs = nn.ModuleList()
-        self.layer_norms = nn.ModuleList()
-
-        for i in range(num_gnn_layers):
-            in_ch = in_channels if i == 0 else hidden_channels
-            if i == num_gnn_layers - 1:
-                # Last layer: single head, no concatenation → hidden_channels
-                self.convs.append(GATConv(
-                    in_ch, hidden_channels, heads=1, concat=False,
-                    dropout=dropout,
-                    edge_dim=edge_dim if edge_dim > 0 else None,
-                ))
-            else:
-                self.convs.append(GATConv(
-                    in_ch, hidden_channels // heads, heads=heads,
-                    dropout=dropout,
-                    edge_dim=edge_dim if edge_dim > 0 else None,
-                ))
-            self.layer_norms.append(nn.LayerNorm(hidden_channels))
-
-        # Graph-level classifier: single logit (BCE with logits)
-        self.classifier = nn.Linear(hidden_channels, 1)
-
-        self.dropout_layer = nn.Dropout(dropout)
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-        batch: torch.Tensor,
-        edge_attr: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        """Forward pass for graph-level classification.
-
-        Args:
-            x: [N, in_channels] node features (concatenated across batch)
-            edge_index: [2, E] edge connectivity (concatenated across batch)
-            batch: [N] batch assignment index per node
-            edge_attr: [E, edge_dim] edge features (optional)
-
-        Returns:
-            logits: [B, 1] graph-level logits
-        """
+    def encode_nodes(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
         h = x
-        for conv, ln in zip(self.convs, self.layer_norms):
-            h = conv(h, edge_index, edge_attr=edge_attr)
-            h = torch.relu(h)
-            h = ln(h)
-            h = self.dropout_layer(h)
+        for conv in self.convs:
+            h = conv(h, edge_index)
+            h = F.relu(h)
+            h = self.dropout(h)
+        return h
 
-        # Global mean pooling: [N, H] -> [B, H]
-        h = global_mean_pool(h, batch)
-
-        # Classifier: [B, H] -> [B, 1]
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
+        """Return node-wise class logits with shape ``[num_nodes, 2]``."""
+        h = self.encode_nodes(x, edge_index)
         return self.classifier(h)
 
-    def encode(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-        batch: torch.Tensor,
-        edge_attr: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        """Encode graphs to embeddings (no classifier, no dropout)."""
-        h = x
-        for conv, ln in zip(self.convs, self.layer_norms):
-            h = conv(h, edge_index, edge_attr=edge_attr)
-            h = torch.relu(h)
-            h = ln(h)
-        return global_mean_pool(h, batch)
+    @torch.no_grad()
+    def predict_proba(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
+        """Return the paper's explicit node-wise softmax probabilities."""
+        return torch.softmax(self.forward(x, edge_index), dim=-1)
 
 
-def snapshot_to_data(snap: dict, device: torch.device) -> Data:
-    """Convert a snapshot dict to a PyG Data object for graph-level training."""
-    x = torch.from_numpy(snap["x"]).float().to(device)
-    edge_index = torch.from_numpy(snap["edge_index"]).long().to(device)
-    edge_attr = (
-        torch.from_numpy(snap["edge_attr"]).float().to(device)
-        if snap.get("edge_attr") is not None and snap["edge_attr"].size > 0
-        else None
+def snapshot_to_data(snap: dict) -> Data:
+    """Convert one temporal snapshot dictionary to a node-classification graph.
+
+    Prometheus intentionally consumes only ``x`` and ``edge_index``. Edge
+    attributes are excluded because the base paper defines ``G=(V,E,X)`` with
+    a node feature matrix X and does not include edge attributes in Eq. (3).
+    """
+    if "node_labels" not in snap:
+        raise KeyError("snapshot is missing node_labels required by paper-style node classification")
+
+    x_np = np.asarray(snap["x"], dtype=np.float32)
+    edge_index_np = np.asarray(snap["edge_index"], dtype=np.int64)
+    y_np = np.asarray(snap["node_labels"], dtype=np.int64)
+
+    if x_np.ndim != 2:
+        raise ValueError(f"x must be [N,F], got {x_np.shape}")
+    if edge_index_np.ndim != 2 or edge_index_np.shape[0] != 2:
+        raise ValueError(f"edge_index must be [2,E], got {edge_index_np.shape}")
+    if y_np.ndim != 1 or y_np.shape[0] != x_np.shape[0]:
+        raise ValueError(f"node_labels must be [N] aligned with x; got y={y_np.shape}, x={x_np.shape}")
+
+    return Data(
+        x=torch.from_numpy(x_np),
+        edge_index=torch.from_numpy(edge_index_np),
+        y=torch.from_numpy(y_np),
     )
-    y = torch.tensor([float(snap.get("snapshot_label", 0))], dtype=torch.float32, device=device)
-    return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)

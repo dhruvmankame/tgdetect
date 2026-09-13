@@ -202,11 +202,15 @@ def _merge(names: str, out_name: str) -> None:
 
 @app.function(volumes={REMOTE_DATA: volume}, timeout=60 * 60 * 4, cpu=8.0, memory=32768)
 def _snapshots(name: str, window_size: float, stride: float, max_snapshots: int,
-               node_feature_mode: str, edge_feature_mode: str, max_edges: int) -> None:
+               node_feature_mode: str, edge_feature_mode: str, max_edges: int,
+               out_name: str = "") -> None:
+    # out_name lets a rebuild land beside the existing snapshots instead of
+    # overwriting them (e.g. flow_agg -> ctu13_c47_flowagg).
+    dest = out_name or name
     cmd = [
         "python", "scripts/build_snapshots.py",
         "--data", f"{REMOTE_DATA}/processed/{name}",
-        "--out", f"{REMOTE_DATA}/snapshots/{name}",
+        "--out", f"{REMOTE_DATA}/snapshots/{dest}",
         "--window-size", str(window_size),
         "--stride", str(stride),
         "--node-feature-mode", node_feature_mode,
@@ -216,6 +220,10 @@ def _snapshots(name: str, window_size: float, stride: float, max_snapshots: int,
         cmd += ["--max-snapshots", str(max_snapshots)]
     if max_edges:
         cmd += ["--max-edges-per-snapshot", str(max_edges)]
+    if dest != name:
+        # Keep provenance pointing at the scenario, not the rebuild directory,
+        # so held-out-family splits still match on scenario_id.
+        cmd += ["--scenario-id", name]
     _run(cmd)
     volume.commit()
 
@@ -282,8 +290,10 @@ def _evaluate(ckpt_name: str, single_name: str, use_scenarios: bool, split: str)
 @app.function(volumes={REMOTE_DATA: volume}, timeout=60 * 60 * 2, cpu=8.0, memory=32768)
 def _evaluate_prometheus(ckpt_name: str, test_scenarios: str, snapshots_root: str,
                          window_size: int, seq_stride: int) -> None:
-    """Evaluate a Prometheus (graph-level) checkpoint — evaluate_tgnn.py only
-    handles edge-level TemporalGNN, so Prometheus needs its own evaluator."""
+    """Evaluate a Prometheus checkpoint — evaluate_tgnn.py only handles
+    edge-level TemporalGNN, so Prometheus needs its own evaluator. The
+    readout (node-wise per paper Eq.4, or legacy graph-level pooling) is read
+    back off the checkpoint, so this works for both."""
     out_dir = f"{REMOTE_DATA}/checkpoints/{ckpt_name}/eval_test"
     cmd = [
         "python", "scripts/eval_prometheus.py",
@@ -528,6 +538,89 @@ def snapshots_ctu13_subset(names: str, window_size: float = 60, stride: float = 
 
 
 @app.local_entrypoint()
+def snapshots_ctu13_flowagg(names: str, window_size: float = 60, stride: float = 30,
+                            max_snapshots: int = 0, max_edges: int = 200000,
+                            suffix: str = "_flowagg") -> None:
+    """Rebuild CTU-13 snapshots with node=flow_agg (edge=flow), writing to
+    snapshots/<name><suffix> so the existing type_only snapshots survive.
+
+    Needed because the paper's Eq. (3) aggregates node states only: with
+    type_only the node feature is a constant column, every GAT attention weight
+    is uniform, and every node collapses to the same representation
+    (AUC-ROC == 0.5).  flow_agg gives each node leakage-free per-window
+    topology + flow statistics so the paper's architecture is trainable.
+    """
+    wanted = [n.strip() for n in names.split(",") if n.strip()]
+    if not wanted:
+        raise SystemExit("pass --names ctu13_c52,ctu13_c46,...")
+    handles = [(n, _snapshots.spawn(n, window_size, stride, max_snapshots,
+                                    "flow_agg", "flow", max_edges, f"{n}{suffix}"))
+               for n in wanted]
+    built, failed = [], []
+    for n, h in handles:
+        try:
+            h.get()
+            built.append(n)
+            print(f"  snapshots {n} -> {n}{suffix}")
+        except Exception as e:
+            msg = (str(e).splitlines() or [""])[-1] or repr(e)
+            failed.append(n)
+            print(f"  FAILED {n}: {msg}")
+    print(f"done -> {len(built)} snapshotted, {len(failed)} failed")
+    if failed:
+        print("failed:", ", ".join(failed))
+
+
+@app.function(volumes={REMOTE_DATA: volume}, timeout=60 * 30, cpu=4.0, memory=16384)
+def _snapshot_density(names: str) -> None:
+    """Report real per-window node/edge density for built snapshot dirs.
+
+    Over-smoothing severity is governed by average node degree, so this is the
+    measurement that says whether the paper's literal 3-layer depth is viable
+    on CTU-13 or collapses the way it does on dense synthetic graphs.
+    """
+    import pickle
+    import statistics
+    from pathlib import Path
+
+    for name in [n.strip() for n in names.split(",") if n.strip()]:
+        d = Path(f"{REMOTE_DATA}/snapshots/{name}")
+        files = sorted(d.glob("snapshot_*.pkl"))
+        if not files:
+            print(f"  {name}: NO SNAPSHOTS")
+            continue
+        step = max(1, len(files) // 200)  # sample up to ~200 windows
+        nodes, edges, degs, posfrac = [], [], [], []
+        for f in files[::step]:
+            with open(f, "rb") as fh:
+                s = pickle.load(fh)
+            n = int(s["x"].shape[0])
+            e = int(s["edge_index"].shape[1])
+            nodes.append(n)
+            edges.append(e)
+            degs.append(2.0 * e / max(n, 1))
+            nl = s.get("node_labels")
+            if nl is not None and len(nl):
+                posfrac.append(float((nl > 0).mean()))
+        print(f"  {name}: windows={len(files)} sampled={len(nodes)}")
+        print(f"    nodes/window   median={statistics.median(nodes):.0f} "
+              f"mean={statistics.mean(nodes):.0f} max={max(nodes)}")
+        print(f"    edges/window   median={statistics.median(edges):.0f} "
+              f"mean={statistics.mean(edges):.0f} max={max(edges)}")
+        print(f"    avg degree     median={statistics.median(degs):.2f} "
+              f"mean={statistics.mean(degs):.2f} max={max(degs):.2f}")
+        if posfrac:
+            print(f"    positive nodes median={statistics.median(posfrac):.4f} "
+                  f"mean={statistics.mean(posfrac):.4f}")
+
+
+@app.local_entrypoint()
+def snapshot_density(names: str) -> None:
+    """CPU-only: print node/edge/degree density per snapshot directory."""
+    _snapshot_density.remote(names)
+
+
+@app.local_entrypoint()
 def smoke(cap: str = "52", window_size: float = 30, stride: float = 10,
           epochs: int = 3, limit: int = 0, background: str = "benign",
           max_snapshots: int = 0, max_edges: int = 200000) -> None:
@@ -563,6 +656,32 @@ def evaluate_ho(out_name: str = "ho", split: str = "test") -> None:
 
 
 @app.local_entrypoint()
+def prometheus_paper(train_scenarios: str, test_scenarios: str,
+                     out_name: str = "prometheus_paper",
+                     epochs: int = 200, batch_size: int = 256,
+                     seq_stride: int = 5, seeds: str = "",
+                     cpu: bool = False, extra: str = "") -> None:
+    """Paper-faithful Prometheus run (base paper Eq. 3-5).
+
+    Defaults reproduce the published architecture exactly: node-wise softmax
+    readout with no pooling, unweighted cross-entropy, no LayerNorm, no edge
+    attributes in aggregation, no gradient clipping, Adam(1e-3, 1e-5),
+    minibatch 256, 200 epochs, 10% reservoir rehearsal.
+
+    Pass seeds="42,43,44,45,46" for the paper's 5-seed mean +/- std.
+    Pass cpu=True for the smoke test before spending GPU time.
+    """
+    flags = f"--batch-size {batch_size} --seq-stride {seq_stride}"
+    if seeds:
+        flags += f" --seeds {seeds}"
+    if extra:
+        flags += f" {extra}"
+    runner = _train_cpu if cpu else _train_gpu
+    runner.remote("", train_scenarios, test_scenarios, out_name, epochs,
+                  128, 0.001, "node", flags, "train_prometheus.py")
+
+
+@app.local_entrypoint()
 def plots(ckpt_name: str, graph_name: str = "") -> None:
     """Generate training curves, evaluation plots, and graph visualizations on Modal (CPU).
 
@@ -593,7 +712,74 @@ def download_plots(ckpt_name: str, local_dir: str = "reports") -> None:
         print("downloaded", rel)
     print(f"done -> {out}  ({count} files)")
 
+# >>> PROMETHEUS_PAPER_ALIGNED_BEGIN >>>
+@app.function(
+    gpu="A10G",
+    volumes={REMOTE_DATA: volume},
+    timeout=60 * 60 * 24,
+    memory=65536,
+)
+def _train_prometheus_paper(
+    train_scenarios: str,
+    test_scenarios: str,
+    out_name: str,
+    seeds: str,
+    lambda_rehearsal: float,
+) -> None:
+    """Paper-configuration Prometheus run. All heavy work stays on Modal."""
+    _run(["nvidia-smi"])
+    cmd = [
+        "python", "scripts/train_prometheus.py",
+        "--snapshots-root", f"{REMOTE_DATA}/snapshots",
+        "--train-scenarios", train_scenarios,
+        "--test-scenarios", test_scenarios,
+        "--out", f"{REMOTE_DATA}/checkpoints/{out_name}",
+        "--epochs", "200",
+        "--batch-size", "256",
+        "--lr", "0.001",
+        "--weight-decay", "0.00001",
+        "--buffer-pct", "0.10",
+        "--lambda-rehearsal", str(lambda_rehearsal),
+        "--seeds", seeds,
+        "--target", "node",
+        "--hidden-channels", "128",
+        "--gnn-layers", "3",
+        "--dropout", "0.2",
+        "--heads", "1",
+    ]
+    _run(cmd)
+    volume.commit()
 
 
+@app.local_entrypoint()
+def train_prometheus_paper(
+    train_scenarios: str,
+    test_scenarios: str,
+    out_name: str = "prometheus_paper",
+    seeds: str = "42,43,44,45,46",
+    lambda_rehearsal: float = 1.0,
+) -> None:
+    """Submit the strict paper configuration to an A100 cloud GPU."""
+    _train_prometheus_paper.remote(
+        train_scenarios,
+        test_scenarios,
+        out_name,
+        seeds,
+        lambda_rehearsal,
+    )
 
 
+@app.local_entrypoint()
+def evaluate_prometheus_paper(
+    out_name: str = "prometheus_paper",
+    test_scenarios: str = "ctu13_c47",
+) -> None:
+    """Evaluate the compatibility checkpoint produced by the first seed."""
+    _evaluate_prometheus.remote(
+        out_name,
+        test_scenarios,
+        f"{REMOTE_DATA}/snapshots",
+        1,
+        1,
+    )
+# <<< PROMETHEUS_PAPER_ALIGNED_END <<<

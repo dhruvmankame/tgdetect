@@ -99,12 +99,24 @@ class SnapshotBuilder:
           - ``type_only``     : node-type one-hot ONLY. Leakage-free. For CTU-13
             (every node is an IP) this is a constant all-ones column — exactly
             the E-GraphSAGE convention where all signal rides on the edges.
+            WARNING: a GNN that does NOT consume ``edge_attr`` is degenerate on
+            this mode. Attention weights are a softmax over neighbours, so with
+            identical node inputs every weight is uniform and each node
+            aggregates an average of identical vectors: every node ends up with
+            the SAME representation and AUC-ROC is pinned to 0.5. Use
+            ``flow_agg`` for any node-wise model that ignores edge features.
+          - ``flow_agg``      : node-type one-hot + per-window NetFlow
+            aggregates, computed inside ``_build_snapshot`` from the flows in
+            that window only (see ``_window_node_features``). Leakage-free: no
+            labels and no cross-window/future information. This is the CTU-13
+            analogue of the base paper's node feature matrix X (which on Wazuh
+            EDR carries cmdlines, hashes and IPs), and it is what makes
+            node-wise classification without edge attributes learnable.
           - ``type_degree``   : one-hot + [degree, out_deg, in_deg, mal_ratio].
             WARNING — LEAKY: ``out/in_degree`` are full-stream totals and
             ``mal_ratio`` is derived from the labels, so both leak future/label
             information into every snapshot. Kept only for backward-compat with
             older Mordor experiments; never use it for a generalisation claim.
-            CTU-13 uses ``type_only``.
         """
         nodes = self.dataset.nodes
         n = len(nodes)
@@ -124,7 +136,8 @@ class SnapshotBuilder:
             mal_ratio = mal / np.where(degree == 0, 1.0, degree)  # LEAKY (labels)
             extra = np.stack([degree, out_deg, in_deg, mal_ratio], axis=1).astype(np.float32)
             self.node_features = np.concatenate([onehot, extra], axis=1)
-        elif self.node_feature_mode == "type_only":
+        elif self.node_feature_mode in ("type_only", "flow_agg"):
+            # flow_agg appends its per-window block later, in _build_snapshot.
             self.node_features = onehot
         else:
             raise ValueError(f"Unknown node_feature_mode: {self.node_feature_mode}")
@@ -164,10 +177,86 @@ class SnapshotBuilder:
 
         if self.edge_feature_mode == "flow":
             self.flow_feats = self._compute_flow_features(edges, order)
+        elif self.node_feature_mode == "flow_agg":
+            # flow_agg pools per-flow statistics onto the endpoints, so it needs
+            # the same per-edge matrix even when the edges themselves carry a
+            # leaner feature vector.
+            self.flow_feats = self._compute_flow_features(edges, order)
 
     # NetFlow edge-feature layout (fixed, leakage-free — see FLOW_FEATURE_DIM).
     _PROTO_VOCAB = ("tcp", "udp", "icmp")
     _DIR_VOCAB = ("->", "<->", "<-")
+
+    # Column slices into the matrix returned by _compute_flow_features.
+    _FF_NUMERIC = slice(0, 9)    # log1p dur/bytes/pkts/rates + src byte ratio
+    _FF_PROTO = slice(9, 13)     # tcp / udp / icmp / other
+    _FF_DIR = slice(13, 17)
+    _FF_STATE = slice(17, 25)
+    _FF_PORT = slice(25, 35)     # port class + service buckets
+
+    # flow_agg node block: 6 topology scalars + sent(9) + recv(9) + proto(4) + port(10)
+    FLOW_AGG_DIM = 6 + 9 + 9 + 4 + 10
+
+    @staticmethod
+    def _mean_by(idx: np.ndarray, vals: np.ndarray, n: int, counts: np.ndarray) -> np.ndarray:
+        """Column-wise mean of `vals` grouped by `idx` (bincount, not np.add.at)."""
+        out = np.zeros((n, vals.shape[1]), dtype=np.float32)
+        if idx.size:
+            denom = np.maximum(counts, 1.0)[:, None]
+            for k in range(vals.shape[1]):
+                out[:, k] = np.bincount(idx, weights=vals[:, k], minlength=n)[:n]
+            out /= denom
+        return out
+
+    def _window_node_features(
+        self,
+        n_nodes: int,
+        src_local: np.ndarray,
+        dst_local: np.ndarray,
+        flow: np.ndarray,
+    ) -> np.ndarray:
+        """Per-node NetFlow aggregates over THIS window only.
+
+        Every value is derived exclusively from the flows inside the window and
+        never from the labels, so this is leakage-free in the same sense as the
+        edge features. It is the CTU-13 stand-in for the base paper's node
+        feature matrix X, and it is what breaks the all-nodes-identical
+        degeneracy that a constant node-type one-hot produces in an
+        attention GNN that ignores edge attributes.
+        """
+        out_deg = np.bincount(src_local, minlength=n_nodes)[:n_nodes].astype(np.float32)
+        in_deg = np.bincount(dst_local, minlength=n_nodes)[:n_nodes].astype(np.float32)
+        deg = out_deg + in_deg
+
+        # Distinct peers, without materialising an n_nodes^2 matrix.
+        if src_local.size:
+            keyed_out = np.unique(src_local.astype(np.int64) * n_nodes + dst_local)
+            distinct_dst = np.bincount(keyed_out // n_nodes, minlength=n_nodes)[:n_nodes]
+            keyed_in = np.unique(dst_local.astype(np.int64) * n_nodes + src_local)
+            distinct_src = np.bincount(keyed_in // n_nodes, minlength=n_nodes)[:n_nodes]
+        else:
+            distinct_dst = np.zeros(n_nodes, dtype=np.int64)
+            distinct_src = np.zeros(n_nodes, dtype=np.int64)
+
+        topo = np.stack(
+            [
+                np.log1p(out_deg),
+                np.log1p(in_deg),
+                np.log1p(deg),
+                out_deg / np.where(deg == 0, 1.0, deg),  # sender-ness, in [0, 1]
+                np.log1p(distinct_dst.astype(np.float32)),
+                np.log1p(distinct_src.astype(np.float32)),
+            ],
+            axis=1,
+        ).astype(np.float32)
+
+        numeric = flow[:, self._FF_NUMERIC]
+        sent = self._mean_by(src_local, numeric, n_nodes, out_deg)
+        recv = self._mean_by(dst_local, numeric, n_nodes, in_deg)
+        proto = self._mean_by(src_local, flow[:, self._FF_PROTO], n_nodes, out_deg)
+        ports = self._mean_by(src_local, flow[:, self._FF_PORT], n_nodes, out_deg)
+
+        return np.concatenate([topo, sent, recv, proto, ports], axis=1).astype(np.float32)
 
     @staticmethod
     def _compute_flow_features(edges: pd.DataFrame, order: np.ndarray) -> np.ndarray:
@@ -385,6 +474,15 @@ class SnapshotBuilder:
         x = self.node_features[globals_]
         node_types = self.node_type_index[globals_]
         node_ids = self.node_ids_arr[globals_].tolist()
+
+        if self.node_feature_mode == "flow_agg":
+            # Append the within-window NetFlow aggregates. Without these, a
+            # node-wise attention GNN that ignores edge_attr sees identical
+            # inputs everywhere and cannot separate any node from any other.
+            agg = self._window_node_features(
+                len(globals_), src_local, dst_local, self.flow_feats[lo:hi]
+            )
+            x = np.concatenate([x, agg], axis=1)
 
         # Node label = 1 iff the node is the SOURCE of a malicious edge in this
         # window. Marking both endpoints (the old behaviour) mislabels every
