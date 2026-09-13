@@ -1,0 +1,43 @@
+{
+  "snapshots_root": "/data/snapshots",
+  "train_scenarios": [
+    "ctu13_c52_flowagg",
+    "ctu13_c46_flowagg",
+    "ctu13_c53_flowagg",
+    "ctu13_c48_flowagg",
+    "ctu13_c49_flowagg"
+  ],
+  "test_scenarios": [
+    "ctu13_c47_flowagg"
+  ],
+  "out": "/data/checkpoints/prometheus_initial_5families_10epochs",
+  "experiment": "full_rehearsal",
+  "epochs": 10,
+  "batch_size": 256,
+  "lr": 0.001,
+  "weight_decay": 1e-05,
+  "buffer_pct": 0.1,
+  "lambda_rehearsal": 1.0,
+  "seeds": "42",
+  "generator_epochs": 25,
+  "generator_max_current_nodes": 100000,
+  "generator_replay_nodes": 50000,
+  "smoke": true,
+  "in_channels": 39,
+  "buffer_capacity_graphs": 264,
+  "device": "cuda",
+  "ctu13_family_map": {
+    "42": "Neris",
+    "43": "Neris",
+    "44": "Rbot",
+    "45": "Rbot",
+    "46": "fast-flux/Virut",
+    "47": "donbot",
+    "48": "Sogou",
+    "49": "qvod/Murlo",
+    "50": "Neris",
+    "52": "Rbot",
+    "53": "NSIS.ay",
+    "54": "fast-flux/Virut"
+  }
+}

@@ -1,0 +1,317 @@
+{
+  "seed": 42,
+  "experiment": "full_rehearsal",
+  "model_kind": "gnn",
+  "parameter_count": 39170,
+  "train_seconds": 966.36312636,
+  "test_overall": {
+    "num_nodes": 408855,
+    "num_positive": 243,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "accuracy": 0.9994056572623546,
+    "auc_roc": 0.9237097412059914
+  },
+  "test_per_scenario": {
+    "ctu13_c47_flowagg": {
+      "num_nodes": 408855,
+      "num_positive": 243,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "accuracy": 0.9994056572623546,
+      "auc_roc": 0.9237097412059914,
+      "family": "donbot"
+    }
+  },
+  "test_by_family": {
+    "donbot": {
+      "num_nodes": 408855,
+      "num_positive": 243,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "accuracy": 0.9994056572623546,
+      "auc_roc": 0.9237097412059914
+    }
+  },
+  "continual_matrix": [
+    {
+      "stage": "ctu13_c52_flowagg",
+      "seen_scenarios": {
+        "ctu13_c52_flowagg": {
+          "num_nodes": 100363,
+          "num_positive": 23,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9997708318802746,
+          "auc_roc": 0.41433170697888044,
+          "family": "Rbot"
+        }
+      },
+      "held_out": {
+        "ctu13_c47_flowagg": {
+          "num_nodes": 408855,
+          "num_positive": 243,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9994056572623546,
+          "auc_roc": 0.8987210904775734,
+          "family": "donbot"
+        }
+      },
+      "buffer_size": 33
+    },
+    {
+      "stage": "ctu13_c46_flowagg",
+      "seen_scenarios": {
+        "ctu13_c52_flowagg": {
+          "num_nodes": 100363,
+          "num_positive": 23,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9997708318802746,
+          "auc_roc": 0.40931875102910964,
+          "family": "Rbot"
+        },
+        "ctu13_c46_flowagg": {
+          "num_nodes": 109341,
+          "num_positive": 42,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9996158805937388,
+          "auc_roc": 0.7093071256261221,
+          "family": "fast-flux/Virut"
+        }
+      },
+      "held_out": {
+        "ctu13_c47_flowagg": {
+          "num_nodes": 408855,
+          "num_positive": 243,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9994056572623546,
+          "auc_roc": 0.9047597408857262,
+          "family": "donbot"
+        }
+      },
+      "buffer_size": 94
+    },
+    {
+      "stage": "ctu13_c53_flowagg",
+      "seen_scenarios": {
+        "ctu13_c52_flowagg": {
+          "num_nodes": 100363,
+          "num_positive": 23,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9997708318802746,
+          "auc_roc": 0.45735845949857434,
+          "family": "Rbot"
+        },
+        "ctu13_c46_flowagg": {
+          "num_nodes": 109341,
+          "num_positive": 42,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9996158805937388,
+          "auc_roc": 0.7329846393401411,
+          "family": "fast-flux/Virut"
+        },
+        "ctu13_c53_flowagg": {
+          "num_nodes": 282298,
+          "num_positive": 219,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9992242240469291,
+          "auc_roc": 0.7437754613287921,
+          "family": "NSIS.ay"
+        }
+      },
+      "held_out": {
+        "ctu13_c47_flowagg": {
+          "num_nodes": 408855,
+          "num_positive": 243,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9994056572623546,
+          "auc_roc": 0.9087506982888856,
+          "family": "donbot"
+        }
+      },
+      "buffer_size": 251
+    },
+    {
+      "stage": "ctu13_c48_flowagg",
+      "seen_scenarios": {
+        "ctu13_c52_flowagg": {
+          "num_nodes": 100363,
+          "num_positive": 23,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9997708318802746,
+          "auc_roc": 0.5102497161823712,
+          "family": "Rbot"
+        },
+        "ctu13_c46_flowagg": {
+          "num_nodes": 109341,
+          "num_positive": 42,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9996158805937388,
+          "auc_roc": 0.8315454243253215,
+          "family": "fast-flux/Virut"
+        },
+        "ctu13_c53_flowagg": {
+          "num_nodes": 282298,
+          "num_positive": 219,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9992242240469291,
+          "auc_roc": 0.8163171475279416,
+          "family": "NSIS.ay"
+        },
+        "ctu13_c48_flowagg": {
+          "num_nodes": 97305,
+          "num_positive": 9,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.999907507322337,
+          "auc_roc": 0.7737819528951744,
+          "family": "Sogou"
+        }
+      },
+      "held_out": {
+        "ctu13_c47_flowagg": {
+          "num_nodes": 408855,
+          "num_positive": 243,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9994056572623546,
+          "auc_roc": 0.9089401381668318,
+          "family": "donbot"
+        }
+      },
+      "buffer_size": 264
+    },
+    {
+      "stage": "ctu13_c49_flowagg",
+      "seen_scenarios": {
+        "ctu13_c52_flowagg": {
+          "num_nodes": 100363,
+          "num_positive": 23,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9997708318802746,
+          "auc_roc": 0.4079234948999488,
+          "family": "Rbot"
+        },
+        "ctu13_c46_flowagg": {
+          "num_nodes": 109341,
+          "num_positive": 42,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9996158805937388,
+          "auc_roc": 0.8842603666046698,
+          "family": "fast-flux/Virut"
+        },
+        "ctu13_c53_flowagg": {
+          "num_nodes": 282298,
+          "num_positive": 219,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9992242240469291,
+          "auc_roc": 0.8969060061722727,
+          "family": "NSIS.ay"
+        },
+        "ctu13_c48_flowagg": {
+          "num_nodes": 97305,
+          "num_positive": 9,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.999907507322337,
+          "auc_roc": 0.8758667708162035,
+          "family": "Sogou"
+        },
+        "ctu13_c49_flowagg": {
+          "num_nodes": 2512543,
+          "num_positive": 2185,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9991303631420437,
+          "auc_roc": 0.9580477607738547,
+          "family": "qvod/Murlo"
+        }
+      },
+      "held_out": {
+        "ctu13_c47_flowagg": {
+          "num_nodes": 408855,
+          "num_positive": 243,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "accuracy": 0.9994056572623546,
+          "auc_roc": 0.9237097412059914,
+          "family": "donbot"
+        }
+      },
+      "buffer_size": 264
+    }
+  ],
+  "forgetting": {
+    "per_scenario": {
+      "ctu13_c52_flowagg": {
+        "best_f1": 0.0,
+        "final_f1": 0.0,
+        "forgetting_f1": 0.0,
+        "backward_transfer_f1": 0.0
+      },
+      "ctu13_c46_flowagg": {
+        "best_f1": 0.0,
+        "final_f1": 0.0,
+        "forgetting_f1": 0.0,
+        "backward_transfer_f1": 0.0
+      },
+      "ctu13_c53_flowagg": {
+        "best_f1": 0.0,
+        "final_f1": 0.0,
+        "forgetting_f1": 0.0,
+        "backward_transfer_f1": 0.0
+      },
+      "ctu13_c48_flowagg": {
+        "best_f1": 0.0,
+        "final_f1": 0.0,
+        "forgetting_f1": 0.0,
+        "backward_transfer_f1": 0.0
+      },
+      "ctu13_c49_flowagg": {
+        "best_f1": 0.0,
+        "final_f1": 0.0,
+        "forgetting_f1": 0.0,
+        "backward_transfer_f1": 0.0
+      }
+    },
+    "average_forgetting_f1": 0.0,
+    "average_backward_transfer_f1": 0.0
+  }
+}

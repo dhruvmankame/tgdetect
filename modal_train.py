@@ -759,7 +759,7 @@ def train_prometheus_paper(
     seeds: str = "42,43,44,45,46",
     lambda_rehearsal: float = 1.0,
 ) -> None:
-    """Submit the strict paper configuration to an A100 cloud GPU."""
+    """Submit the strict paper configuration to an A10G cloud GPU."""
     _train_prometheus_paper.remote(
         train_scenarios,
         test_scenarios,
@@ -783,3 +783,143 @@ def evaluate_prometheus_paper(
         1,
     )
 # <<< PROMETHEUS_PAPER_ALIGNED_END <<<
+
+# >>> PROMETHEUS_CTU13_PAPER_EXTRAS_BEGIN >>>
+@app.function(
+    gpu="A10G",
+    volumes={REMOTE_DATA: volume},
+    timeout=60 * 60 * 24,
+    memory=65536,
+)
+def _prometheus_experiment_extra(
+    experiment: str,
+    train_scenarios: str,
+    test_scenarios: str,
+    out_name: str,
+    seeds: str,
+    epochs: int,
+    extra: str,
+) -> None:
+    # Run one CTU-13 paper baseline/ablation on A10G.
+    _run(["nvidia-smi"])
+    cmd = [
+        "python", "scripts/train_prometheus_experiment.py",
+        "--snapshots-root", f"{REMOTE_DATA}/snapshots",
+        "--train-scenarios", train_scenarios,
+        "--test-scenarios", test_scenarios,
+        "--out", f"{REMOTE_DATA}/checkpoints/{out_name}",
+        "--experiment", experiment,
+        "--epochs", str(epochs),
+        "--batch-size", "256",
+        "--lr", "0.001",
+        "--weight-decay", "0.00001",
+        "--buffer-pct", "0.10",
+        "--lambda-rehearsal", "1.0",
+        "--seeds", seeds,
+    ]
+    if extra:
+        cmd += [x for x in extra.split() if x]
+    _run(cmd)
+    volume.commit()
+
+
+@app.local_entrypoint()
+def prometheus_experiment(
+    experiment: str,
+    train_scenarios: str,
+    test_scenarios: str,
+    out_name: str,
+    seeds: str = "42,43,44,45,46",
+    epochs: int = 200,
+    extra: str = "",
+) -> None:
+    # Submit one paper comparison/ablation experiment to Modal A10G.
+    # For paper-style CTU-13 Prometheus runs, pass *_flowagg snapshot names.
+    _prometheus_experiment_extra.remote(
+        experiment, train_scenarios, test_scenarios, out_name, seeds, epochs, extra
+    )
+
+
+@app.function(
+    gpu="A10G",
+    volumes={REMOTE_DATA: volume},
+    timeout=60 * 60 * 2,
+    memory=32768,
+)
+def _benchmark_prometheus_extra(checkpoint_name: str, scenarios: str) -> None:
+    ckpt = f"{REMOTE_DATA}/checkpoints/{checkpoint_name}/best_model.pt"
+    out = f"{REMOTE_DATA}/checkpoints/{checkpoint_name}/benchmark.json"
+    _run([
+        "python", "scripts/benchmark_prometheus.py",
+        "--checkpoint", ckpt,
+        "--snapshots-root", f"{REMOTE_DATA}/snapshots",
+        "--scenarios", scenarios,
+        "--out", out,
+        "--batch-size", "1",
+        "--warmup", "10",
+        "--repeats", "100",
+        "--max-graphs", "100",
+    ])
+    volume.commit()
+
+
+@app.local_entrypoint()
+def benchmark_prometheus_extra(
+    checkpoint_name: str = "prometheus_paper",
+    scenarios: str = "ctu13_c47_flowagg",
+) -> None:
+    # Measure Prometheus latency/memory on A10G with an explicit protocol.
+    _benchmark_prometheus_extra.remote(checkpoint_name, scenarios)
+
+
+@app.function(
+    volumes={REMOTE_DATA: volume},
+    timeout=60 * 60,
+    cpu=4.0,
+    memory=16384,
+)
+def _explain_prometheus_extra(checkpoint_name: str, scenario: str) -> None:
+    ckpt = f"{REMOTE_DATA}/checkpoints/{checkpoint_name}/best_model.pt"
+    out = f"{REMOTE_DATA}/checkpoints/{checkpoint_name}/explanations/{scenario}"
+    _run([
+        "python", "scripts/explain_prometheus.py",
+        "--checkpoint", ckpt,
+        "--snapshots", f"{REMOTE_DATA}/snapshots/{scenario}",
+        "--out", out,
+        "--top-nodes", "25",
+        "--top-edges", "100",
+        "--max-snapshots", "10",
+    ])
+    volume.commit()
+
+
+@app.local_entrypoint()
+def explain_prometheus_extra(
+    checkpoint_name: str = "prometheus_paper",
+    scenario: str = "ctu13_c47_flowagg",
+) -> None:
+    # Export attention-backed malicious-subgraph evidence.
+    _explain_prometheus_extra.remote(checkpoint_name, scenario)
+
+
+@app.function(
+    volumes={REMOTE_DATA: volume},
+    timeout=60 * 30,
+    cpu=2.0,
+    memory=8192,
+)
+def _report_prometheus_extra(root_name: str) -> None:
+    root = f"{REMOTE_DATA}/checkpoints/{root_name}"
+    _run([
+        "python", "scripts/report_prometheus_paper.py",
+        "--root", root,
+        "--out", f"{root}/PROMETHEUS_CTU13_COMPARISON.md",
+    ])
+    volume.commit()
+
+
+@app.local_entrypoint()
+def report_prometheus_extra(root_name: str = "paper_suite") -> None:
+    # Generate the CTU-13 paper-comparison Markdown report.
+    _report_prometheus_extra.remote(root_name)
+# <<< PROMETHEUS_CTU13_PAPER_EXTRAS_END <<<
